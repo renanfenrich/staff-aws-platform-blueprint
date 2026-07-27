@@ -3,7 +3,7 @@ TF_DIR := infra/terraform
 IMAGE := staff-aws-platform-blueprint-api:local
 
 .PHONY: help setup run lint typecheck test security container docs-check workflow-lint \
-	tf-init tf-format tf-format-check tf-validate tf-plan validate
+	tf-init tf-format tf-format-check tf-validate tf-plan tf-test validate
 
 help:
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "%-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -50,8 +50,10 @@ tf-format-check: ## Check Terraform formatting
 tf-validate: tf-init ## Validate Terraform configuration
 	terraform -chdir=$(TF_DIR) validate
 
-tf-plan: tf-init ## Produce a credential-free, no-resource foundation plan
-	terraform -chdir=$(TF_DIR) plan -input=false -lock=false \
-		-var='cost_center=portfolio' -var='owner=local-validation'
+tf-plan: tf-init ## Prove the disabled plan contains zero AWS resource changes
+	./scripts/tf-plan.sh
 
-validate: lint typecheck test docs-check workflow-lint tf-format-check tf-validate ## Run the local quality gate
+tf-test: tf-init ## Test the enabled runtime graph with a mock AWS provider
+	terraform -chdir=$(TF_DIR) test
+
+validate: lint typecheck test docs-check workflow-lint tf-format-check tf-validate tf-plan tf-test ## Run the local quality gate

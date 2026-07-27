@@ -2,128 +2,163 @@
 
 ## Status and scope
 
-The repository currently implements the API, hardened container, validation
-pipeline, and Terraform input contract. The diagram below is the target AWS
-architecture for the next slices; no AWS resources exist in this foundation
-slice.
+Terraform represents the disposable sandbox network and ECS runtime described
+below. `deployment_enabled` defaults to `false`, so the normal local plan has
+zero AWS resource changes and does not authenticate to AWS. The enabled graph
+has been validated only with Terraform's mock AWS provider; it has not been
+applied or operationally tested in AWS.
 
-## Target architecture
+## Implemented sandbox architecture
 
 ```mermaid
 flowchart LR
-  User[HTTP client] --> ALB[Application Load Balancer]
-  WAF[Optional AWS WAF] -. protects .-> ALB
+  User[HTTP client] -->|TCP 80| ALBSG[ALB security group]
+  ALBSG --> ALB[Application Load Balancer]
+  ALB -->|TCP 8080| TaskSG[Task security group]
+  TaskSG --> Task[ECS Fargate task]
+  Task -->|HTTPS| ECR[Amazon ECR and image layers]
+  Task -->|HTTPS| Logs[CloudWatch Logs]
 
-  subgraph VPC[VPC across two Availability Zones]
-    ALB --> ECS[ECS Fargate service]
-    ECS --> Logs[CloudWatch logs and metrics]
-    EFS[Optional EFS persistence] -. mounted by profile .-> ECS
+  subgraph VPC[VPC in two Availability Zones]
+    ALB
+    Task
   end
-
-  GHA[GitHub Actions] -->|OIDC short-lived role| IAM[AWS IAM]
-  IAM -->|scoped deployment| ECS
-  IAM --> ECR[Amazon ECR]
-  Budget[AWS Budget] --> Notify[Budget notifications]
-  Alarms[CloudWatch alarms] --> Notify
 ```
 
-## Request and delivery paths
+The VPC has DNS support and hostnames, two `/24` public subnets in distinct
+Availability Zones, one internet gateway, one public route table, one default
+IPv4 route, and an association for each subnet. There is no NAT gateway. ECS
+assigns each sandbox task a public IPv4 address for outbound traffic; subnet
+automatic public-address assignment remains disabled.
 
-1. The public ALB terminates TLS and forwards only to the task security group.
-2. ECS Fargate runs the immutable image as a non-root user with a read-only root
-   filesystem. `/health` tests process liveness; `/ready` controls ALB routing.
-3. Application logs are JSON on standard output and flow to CloudWatch.
-4. GitHub Actions exchanges its repository and environment identity for a
-   short-lived AWS role. No permanent AWS access keys are permitted.
-5. Images are addressed by digest in task definitions. Promotion reuses an
-   already-scanned image rather than rebuilding it.
+## Resource inventory
 
-## Network profiles
+With `deployment_enabled=true`, Terraform represents 28 resource instances:
 
-The disposable sandbox will avoid a continuously billed NAT gateway. Tasks may
-use public egress addresses, but their security group accepts inbound traffic
-only from the ALB security group. The production profile will place tasks in
-private subnets and require an explicit choice between redundant NAT gateways
-and VPC endpoints. That choice must include a traffic-based cost comparison.
+| Boundary | Resources |
+| --- | --- |
+| Network | 1 VPC, 2 public subnets, 1 internet gateway, 1 route table, 1 default route, 2 route-table associations |
+| Network security | 2 security groups and 6 standalone ingress or egress rules |
+| Registry | 1 ECR repository and 1 lifecycle policy |
+| Runtime IAM | 2 roles and 1 inline execution policy |
+| Entry point | 1 ALB, 1 IP target group, and 1 HTTP listener |
+| Compute | 1 ECS cluster, 1 Fargate task definition, and 1 ECS service |
+| Observability | 1 CloudWatch log group |
 
-Two Availability Zones are the default reliability boundary. A single-AZ or
-single-NAT mode must never be represented as production-ready.
+## Request, image-pull, and logging paths
 
-## Security boundaries
+The exact request path is:
 
-- Internet traffic crosses only the ALB, and optionally WAF.
-- ALB and task security groups reference each other instead of broad CIDRs.
-- The task execution role is limited to image pull and log delivery.
-- The application task role starts with no permissions and gains only
-  workload-specific actions.
-- The GitHub OIDC trust policy binds repository, branch or environment, and
-  audience claims. Production uses a protected GitHub environment.
-- Terraform state will use encrypted S3 with versioning and lockfiles. State
-  bootstrap is a separate, explicitly approved operation.
-- Secrets belong in AWS Secrets Manager or SSM Parameter Store and are never
-  Terraform outputs, repository variables, logs, or image layers.
+```text
+internet TCP/80
+-> ALB security group
+-> HTTP listener
+-> IP target group TCP/8080 with GET /ready health checks
+-> task security group allowing TCP/8080 only from the ALB security group
+-> non-root application container
+```
 
-## Reliability model
+No task ingress rule contains a public CIDR. SSH, administrative ports, ECS
+Exec, and unrestricted security-group egress are absent.
 
-- Desired count of two and multi-AZ placement are production defaults.
-- ALB health checks use `/ready`; container health uses `/health`.
-- ECS deployment circuit breaker and automatic rollback protect releases.
-- Graceful shutdown marks the task unready before draining connections.
-- Alarms cover healthy host count, HTTP 5xx, target response time, CPU, memory,
-  task count, and log error rate.
-- Logs have bounded retention. Alarm delivery requires a tested notification
-  destination.
+The image-pull path is:
 
-## Threat model
+```text
+ECS agent using the task execution role
+-> ecr:GetAuthorizationToken on Resource "*"
+-> BatchCheckLayerAvailability, GetDownloadUrlForLayer, and BatchGetImage
+   on the project ECR repository
+-> task ENI TCP/443 through its public IPv4 address and internet gateway
+-> ECR and signed image-layer endpoints
+```
 
-| Threat | Boundary or mitigation | Residual risk |
-| --- | --- | --- |
-| Stolen AWS credentials | GitHub OIDC and short sessions; no static keys | Compromised trusted workflow can request a session |
-| Supply-chain tampering | Exact dependency, image, tool, and action pins; scans and SBOM | A trusted upstream release can still be malicious |
-| Public API abuse | ALB controls, rate-aware alarms, optional WAF | WAF is off in the cost-minimal sandbox |
-| Lateral movement | Separate ALB/task security groups and least-privilege roles | Runtime or kernel vulnerabilities remain possible |
-| Secret disclosure | No repository credentials; log discipline; managed secret stores | Application code could log a future secret |
-| Destructive deployment | Reviewed plans, environment approval, explicit destroy workflow | Authorized operators can still approve a bad plan |
-| Cost exhaustion | Default-disabled resources, budgets, on-demand sandbox, WAF toggle | Budgets alert after usage and do not cap spend |
-| State loss or corruption | Versioned encrypted state and lockfile design | Bootstrap is not implemented yet |
+`ecr:GetAuthorizationToken` cannot be resource-scoped by AWS. All repository
+read actions are limited to the project repository ARN.
 
-## Cost model
+The logging path is:
 
-The sandbox is destroyed when not in use. Its cost equation is:
+```text
+application structured JSON on stdout/stderr
+-> ECS awslogs driver
+-> execution-role CreateLogStream and PutLogEvents
+-> project CloudWatch log group
+```
+
+Log permissions are scoped to streams under that log group. Retention defaults
+to seven days, and the log group is disposable with the sandbox.
+
+## Security and IAM boundaries
+
+- The internet crosses only the sandbox ALB on TCP port 80.
+- ALB egress is only TCP port 8080 to the task security group.
+- Task ingress is only TCP port 8080 from the ALB security group.
+- Task egress is TCP port 443 to public endpoints and TCP or UDP port 53 to the
+  VPC resolver. Public HTTPS egress is the documented exception required by the
+  no-NAT sandbox.
+- Both ECS roles trust only `ecs-tasks.amazonaws.com`.
+- The task execution role has only ECR-pull and log-delivery actions.
+- The application task role has no policies because the API uses no AWS API.
+- The container runs as UID 1000 with a read-only root filesystem, no
+  privileged mode, and all Linux capabilities dropped.
+- The task definition accepts only digest-form image references and explicitly
+  selects Linux on X86_64, Fargate, `awsvpc`, 0.25 vCPU, and 0.5 GiB defaults.
+- The service uses one task by default, two subnets, Fargate platform `1.4.0`,
+  a deployment circuit breaker, and automatic rollback.
+
+## Cost gate and sandbox cost model
+
+Every cost-bearing module uses the root `deployment_enabled` gate. Its default
+is `false`; disabled outputs are null or empty. The local plan uses non-secret,
+process-local provider placeholders because the AWS provider SDK requires a
+credential-shaped value, while provider validation, metadata lookup, account
+lookup, refresh, and all resource creation are disabled. A plan JSON check
+fails if any AWS resource change appears.
+
+The enabled sandbox cost equation is:
 
 ```text
 Fargate vCPU-seconds + Fargate GB-seconds
 + ALB-hours + LCUs + public IPv4
-+ logs, image storage, requests, and data transfer
-+ optional WAF, EFS, NAT, or VPC endpoints
++ ECR storage and requests + CloudWatch log ingestion and storage
++ data transfer
 ```
 
-Fargate charges by requested CPU, memory, and storage over task duration;
-ALB charges by running hours and capacity units. NAT gateways add hourly and
-per-GB processing charges, so they are excluded from the default sandbox.
-WAF adds ACL, rule, and request charges and remains opt-in. Verify the estimate
-for the chosen region in the
-[AWS Pricing Calculator](https://calculator.aws/) before deployment.
+The one-task 0.25-vCPU/0.5-GiB defaults and seven-day log retention reduce cost.
+The ALB and public IPv4 addresses still have standing charges while deployed.
+ECR lifecycle rules expire untagged images after seven days and retain at most
+30 images. Repository force deletion is disabled by default.
 
-Pricing references:
+NAT gateways are deferred because their hourly and per-GB charges are poor
+defaults for a disposable exercise. The task HTTPS rule is consequently broad
+by destination but narrow by port. Reconsider NAT versus VPC endpoints with a
+traffic and availability estimate before production.
 
-- [AWS Fargate pricing](https://aws.amazon.com/fargate/pricing/)
-- [Elastic Load Balancing pricing](https://aws.amazon.com/elasticloadbalancing/pricing/)
-- [NAT gateway pricing guidance](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-pricing.html)
-- [AWS WAF pricing](https://aws.amazon.com/waf/pricing/)
+## Deferred production architecture
 
-The initial monthly budget input is USD 25. This is an alert threshold, not a
-spend limit. The implementation slice must add forecast and actual alerts and
-document recipient verification.
+This sandbox is intentionally not production-ready. Production requires:
 
-## Mandatory tags
+- private application subnets and redundant reviewed egress;
+- ACM-managed TLS, DNS ownership review, HTTPS redirect, and certificate
+  renewal ownership;
+- ALB access logs and a WAF and rate-control decision;
+- capacity, autoscaling, dashboards, alarms, notification, and SLO decisions;
+- encrypted remote state, GitHub OIDC, approved plan/apply/destroy workflows,
+  and drift controls;
+- a build-once workflow that scans, attests, pushes, and deploys one digest;
+- budget alerts and an operationally tested rollback and recovery path.
 
-Every resource must inherit:
+TLS is deferred because this slice has neither an owned DNS name nor ACM
+certificate lifecycle. The HTTP listener is acceptable only for the disposable
+sandbox and has a time-bounded Trivy exception.
 
-- `Project`
-- `Environment`
-- `ManagedBy`
-- `Owner`
-- `CostCenter`
+## Threat model
 
-Policy checks must fail plans with missing or empty tags.
+| Threat | Current boundary | Residual risk |
+| --- | --- | --- |
+| Direct task compromise | No public task ingress; ALB-to-task SG reference | Public task IP still reaches approved outbound destinations |
+| Role escalation | Empty app role; explicit execution policy | Compromised task can use its execution path through the ECS agent |
+| Supply-chain tampering | Digest-only input, immutable ECR tags, scan-on-push | Image build, attestation, and publish workflow is not implemented |
+| Public API abuse | ALB-only ingress and invalid-header dropping | HTTP lacks TLS; WAF, rate controls, and alarms are deferred |
+| Cost exhaustion | Default-disabled graph, small task, no NAT, bounded logs/images | ALB and public IPv4 accrue charges while enabled |
+| Destructive deployment | No apply or destroy workflow exists | A manual out-of-band apply would bypass intended controls |
+| State loss | No remote state exists and no apply has occurred | Remote-state bootstrap remains a prerequisite |
