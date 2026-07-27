@@ -1,0 +1,11 @@
+.git
+.github
+.codex
+.terraform
+dist
+docs
+infra
+node_modules
+test
+*.md
+*.tfplan

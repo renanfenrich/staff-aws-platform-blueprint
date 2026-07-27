@@ -1,0 +1,7 @@
+cost_center = "portfolio"
+owner       = "platform-team"
+
+# Cost-bearing modules remain disabled by default.
+deployment_enabled  = false
+enable_waf          = false
+persistence_profile = "none"
