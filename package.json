@@ -1,0 +1,27 @@
+{
+  "name": "staff-aws-platform-blueprint",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dependency-light HTTP API for an AWS ECS Fargate platform blueprint",
+  "type": "module",
+  "engines": {
+    "node": "24.18.0",
+    "npm": "11.16.0"
+  },
+  "packageManager": "npm@11.16.0",
+  "scripts": {
+    "build": "tsc",
+    "docs:check": "markdownlint-cli2 \"**/*.md\" \"#node_modules\"",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "start": "node dist/src/index.js",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.5",
+    "@types/node": "24.13.3",
+    "markdownlint-cli2": "0.23.2",
+    "typescript": "7.0.2"
+  }
+}
