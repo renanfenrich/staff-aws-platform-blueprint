@@ -3,27 +3,30 @@
 Build a production-oriented AWS platform blueprint for a small containerized
 API, delivered through Terraform and GitHub Actions.
 
-## Current slice: initial foundation
+## Current slice: cost-gated AWS runtime foundation
 
-Deliver:
+Deliver a deployable Terraform graph for:
 
-- repository and AI working agreements;
-- a minimal, tested, containerized HTTP API;
-- deterministic local validation commands;
-- pinned CI, security scanning, and dependency updates;
-- an offline-safe Terraform input and tagging contract;
-- architecture, threat, cost, runbook, ADR, and readiness documentation.
+- a two-AZ public sandbox VPC;
+- separate ALB and task security boundaries;
+- an internet-facing HTTP ALB;
+- ECR, ECS Fargate, runtime IAM, and bounded CloudWatch logs;
+- a default-disabled, credential-free zero-resource plan;
+- mock-provider tests of the enabled graph;
+- accurate sandbox and production-gap documentation.
 
 ## Scope boundary
 
-This slice must not create or mutate AWS resources. VPC, ECS Fargate, ALB, IAM,
-OIDC, observability, budgets, WAF, persistence, deployment, and destroy
-implementations remain explicitly planned work.
+This slice does not create AWS resources. OIDC, remote state, apply and destroy
+workflows, image publishing, TLS, DNS, WAF, private production networking,
+budgets, alarms, autoscaling, persistence, and production remain planned work.
 
 ## Completion evidence
 
 - `make validate`
-- `make security`
-- `make container`
 - `make tf-plan`
-- reviewed diff with no credentials or unpinned GitHub Actions
+- `make tf-test`
+- `make security`
+- `git diff --check`
+- reviewed diff with no credentials, public task ingress, mutable images, or
+  unpinned automation

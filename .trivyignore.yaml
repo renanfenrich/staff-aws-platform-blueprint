@@ -1,0 +1,16 @@
+misconfigurations:
+  - id: AVD-AWS-0053
+    paths:
+      - "modules/alb/main.tf"
+    expired_at: 2026-10-31
+    statement: The disposable sandbox requires an internet-facing ALB; reconsider with the production network profile.
+  - id: AVD-AWS-0054
+    paths:
+      - "modules/alb/main.tf"
+    expired_at: 2026-10-31
+    statement: Sandbox HTTP is explicitly scoped to this slice; replace it after ACM and DNS ownership are implemented.
+  - id: AVD-AWS-0104
+    paths:
+      - "modules/network/main.tf"
+    expired_at: 2026-10-31
+    statement: Tasks require TCP 443 to public ECR, Logs, and image-layer endpoints until a reviewed NAT or VPC endpoint design exists.

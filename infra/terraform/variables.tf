@@ -1,12 +1,68 @@
+variable "application_port" {
+  description = "Port exposed by the application container and ALB target group."
+  type        = number
+  default     = 8080
+  nullable    = false
+
+  validation {
+    condition     = var.application_port >= 1024 && var.application_port <= 65535
+    error_message = "application_port must be between 1024 and 65535."
+  }
+}
+
+variable "availability_zones" {
+  description = "Two distinct Availability Zones used by the sandbox public subnets."
+  type        = list(string)
+  default     = ["us-east-1a", "us-east-1b"]
+  nullable    = false
+
+  validation {
+    condition = (
+      length(var.availability_zones) == 2 &&
+      length(distinct(var.availability_zones)) == 2 &&
+      alltrue([
+        for zone in var.availability_zones :
+        length(trimspace(zone)) > 0 && startswith(zone, var.aws_region)
+      ])
+    )
+    error_message = "availability_zones must contain exactly two distinct zones in aws_region."
+  }
+}
+
 variable "aws_region" {
-  description = "AWS region for the disposable environment."
+  description = "AWS region for the disposable sandbox."
   type        = string
   default     = "us-east-1"
   nullable    = false
+
+  validation {
+    condition     = can(regex("^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$", var.aws_region))
+    error_message = "aws_region must be a valid AWS region name."
+  }
+}
+
+variable "container_image" {
+  description = "Immutable container image reference. Required as a sha256 digest when deployment is enabled."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition = (
+      !var.deployment_enabled ||
+      can(regex("^[^[:space:]]+@sha256:[0-9a-f]{64}$", var.container_image))
+    )
+    error_message = "container_image must be a non-empty sha256 digest reference when deployment_enabled is true."
+  }
+
+  validation {
+    condition     = !can(regex("(?i)(^|:)latest($|@)", var.container_image))
+    error_message = "container_image must not use the mutable latest tag."
+  }
 }
 
 variable "cost_center" {
-  description = "Cost allocation identifier applied to every resource."
+  description = "Cost allocation identifier applied to every taggable resource."
   type        = string
   nullable    = false
 
@@ -17,14 +73,26 @@ variable "cost_center" {
 }
 
 variable "deployment_enabled" {
-  description = "Explicit cost gate. Resource modules will remain disabled unless true."
+  description = "Explicit cost gate. No AWS resources exist in the graph unless true."
   type        = bool
   default     = false
   nullable    = false
 }
 
-variable "enable_waf" {
-  description = "Create the optional WAF profile when the runtime slice exists."
+variable "desired_task_count" {
+  description = "Number of Fargate tasks in the sandbox service."
+  type        = number
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.desired_task_count >= 1 && var.desired_task_count <= 4 && floor(var.desired_task_count) == var.desired_task_count
+    error_message = "desired_task_count must be an integer between 1 and 4."
+  }
+}
+
+variable "ecr_force_delete" {
+  description = "Allow repository deletion with images. Keep false except for an explicitly reviewed cleanup."
   type        = bool
   default     = false
   nullable    = false
@@ -42,32 +110,61 @@ variable "environment" {
   }
 }
 
-variable "github_repository" {
-  description = "GitHub owner/repository allowed to use the future OIDC role."
-  type        = string
-  default     = "renanfenrich/staff-aws-platform-blueprint"
+variable "health_check_grace_period_seconds" {
+  description = "Time ECS ignores load balancer health failures after a task starts."
+  type        = number
+  default     = 30
   nullable    = false
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
-    error_message = "github_repository must use owner/repository format."
+    condition     = var.health_check_grace_period_seconds >= 0 && var.health_check_grace_period_seconds <= 300
+    error_message = "health_check_grace_period_seconds must be between 0 and 300."
   }
 }
 
-variable "monthly_budget_usd" {
-  description = "Monthly sandbox budget threshold in US dollars."
-  type        = number
-  default     = 25
+variable "health_check_path" {
+  description = "ALB readiness health-check path."
+  type        = string
+  default     = "/ready"
   nullable    = false
 
   validation {
-    condition     = var.monthly_budget_usd > 0
-    error_message = "monthly_budget_usd must be greater than zero."
+    condition     = startswith(var.health_check_path, "/") && length(var.health_check_path) <= 128
+    error_message = "health_check_path must be a non-empty absolute path up to 128 characters."
+  }
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch application log retention for the disposable sandbox."
+  type        = number
+  default     = 7
+  nullable    = false
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90], var.log_retention_days)
+    error_message = "log_retention_days must be one of 1, 3, 5, 7, 14, 30, 60, or 90."
+  }
+}
+
+variable "network_profile" {
+  description = "Network placement profile. Only the disposable public-IP sandbox is implemented."
+  type        = string
+  default     = "sandbox-public"
+  nullable    = false
+
+  validation {
+    condition     = var.network_profile == "sandbox-public"
+    error_message = "network_profile must be sandbox-public in this slice."
+  }
+
+  validation {
+    condition     = var.environment != "production" || var.network_profile != "sandbox-public"
+    error_message = "production must not use the sandbox-public network profile."
   }
 }
 
 variable "owner" {
-  description = "Accountable owner applied to every resource."
+  description = "Accountable owner applied to every taggable resource."
   type        = string
   nullable    = false
 
@@ -77,21 +174,94 @@ variable "owner" {
   }
 }
 
-variable "persistence_profile" {
-  description = "Persistence mode. The initial API remains stateless."
-  type        = string
-  default     = "none"
-  nullable    = false
-
-  validation {
-    condition     = contains(["none", "efs"], var.persistence_profile)
-    error_message = "persistence_profile must be none or efs."
-  }
-}
-
 variable "project_name" {
-  description = "Stable project identifier used for naming and tags."
+  description = "Stable project identifier used for names and tags."
   type        = string
   default     = "staff-aws-platform-blueprint"
   nullable    = false
+
+  validation {
+    condition = (
+      length(var.project_name) >= 3 &&
+      length(var.project_name) <= 40 &&
+      can(regex("^[a-z0-9][a-z0-9-]*[a-z0-9]$", var.project_name))
+    )
+    error_message = "project_name must be 3-40 lowercase alphanumeric or hyphen characters."
+  }
+}
+
+variable "public_subnet_cidrs" {
+  description = "Two distinct, non-overlapping /24 public subnet CIDRs inside the VPC CIDR."
+  type        = list(string)
+  default     = ["10.42.0.0/24", "10.42.1.0/24"]
+  nullable    = false
+
+  validation {
+    condition = (
+      length(var.public_subnet_cidrs) == 2 &&
+      length(distinct(var.public_subnet_cidrs)) == 2 &&
+      alltrue([
+        for cidr in var.public_subnet_cidrs :
+        can(cidrnetmask(cidr)) &&
+        endswith(cidr, "/24") &&
+        try(cidr == "${cidrhost(cidr, 0)}/24", false)
+      ])
+    )
+    error_message = "public_subnet_cidrs must contain exactly two distinct canonical /24 IPv4 CIDRs."
+  }
+
+  validation {
+    condition = try(alltrue([
+      for cidr in var.public_subnet_cidrs :
+      contains([for index in range(256) : cidrsubnet(var.vpc_cidr, 8, index)], cidr)
+    ]), false)
+    error_message = "Every public subnet must be contained in vpc_cidr."
+  }
+}
+
+variable "task_cpu" {
+  description = "Fargate task CPU units."
+  type        = number
+  default     = 256
+  nullable    = false
+
+  validation {
+    condition     = contains([256, 512, 1024, 2048, 4096], var.task_cpu)
+    error_message = "task_cpu must be a supported Fargate CPU value."
+  }
+}
+
+variable "task_memory" {
+  description = "Fargate task memory in MiB."
+  type        = number
+  default     = 512
+  nullable    = false
+
+  validation {
+    condition = contains(lookup({
+      256  = [512, 1024, 2048]
+      512  = [1024, 2048, 3072, 4096]
+      1024 = [2048, 3072, 4096, 5120, 6144, 7168, 8192]
+      2048 = [4096, 5120, 6144, 7168, 8192, 9216, 10240, 11264, 12288, 13312, 14336, 15360, 16384]
+      4096 = [8192, 9216, 10240, 11264, 12288, 13312, 14336, 15360, 16384, 17408, 18432, 19456, 20480, 21504, 22528, 23552, 24576, 25600, 26624, 27648, 28672, 29696, 30720]
+    }, var.task_cpu, []), var.task_memory)
+    error_message = "task_memory must be supported for the selected task_cpu."
+  }
+}
+
+variable "vpc_cidr" {
+  description = "IPv4 CIDR for the disposable sandbox VPC."
+  type        = string
+  default     = "10.42.0.0/16"
+  nullable    = false
+
+  validation {
+    condition = (
+      can(cidrnetmask(var.vpc_cidr)) &&
+      can(regex("^(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)", var.vpc_cidr)) &&
+      endswith(var.vpc_cidr, "/16") &&
+      try(var.vpc_cidr == "${cidrhost(var.vpc_cidr, 0)}/16", false)
+    )
+    error_message = "vpc_cidr must be a canonical private RFC 1918 /16 IPv4 CIDR."
+  }
 }

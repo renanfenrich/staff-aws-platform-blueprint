@@ -25,7 +25,10 @@ docker run --rm \
   --volume "${trivy_cache}:/root/.cache/trivy" \
   --volume "${repository_root}:/repo" \
   "${trivy_image}" \
-  config --severity HIGH,CRITICAL --exit-code 1 /repo/infra/terraform
+  config --severity HIGH,CRITICAL --exit-code 1 \
+    --ignorefile /repo/.trivyignore.yaml \
+    --tf-vars /repo/infra/terraform/tests/security.tfvars \
+    /repo/infra/terraform
 
 docker run --rm \
   --volume "${trivy_cache}:/root/.cache/trivy" \
