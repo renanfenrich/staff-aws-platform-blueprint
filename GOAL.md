@@ -5,12 +5,13 @@ API, delivered through Terraform and GitHub Actions.
 
 ## Current slice: digest attestation registry credentials
 
-Allow the pinned digest-attestation action to use the standard scoped ECR login
+Allow the pinned digest-attestation action to use the scoped ECR login
 without persisting or broadening registry credentials:
 
-- reserve the clean default Docker configuration path before ECR login;
-- use that standard path for both Docker push and `actions/attest`;
-- remove the registry credentials in an `always()` cleanup;
+- retain ECR credentials in a run-temporary Docker configuration;
+- copy them mode `0600` only into a separate run-temporary home for
+  `actions/attest`;
+- remove both credential files in an `always()` cleanup;
 - preserve credential-free local, pull-request, and mock-provider validation.
 
 ## Scope boundary

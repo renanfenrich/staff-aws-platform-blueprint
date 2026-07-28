@@ -167,8 +167,9 @@ variables are independently verified.
 12. Treat ECR Basic scan on push as asynchronous advisory evidence; publication
     does not poll it. Review later findings before any deployment or promotion,
     and stop selection of the digest if they contradict the accepted Trivy gate.
-13. Confirm the workflow reserves an absent default Docker configuration path
-    before ECR login and removes its registry credentials in `always()` cleanup.
+13. Confirm ECR login uses a run-temporary Docker configuration, `actions/attest`
+    receives only its separate temporary home, and both credential files are
+    removed in `always()` cleanup without modifying the hosted runner default.
 14. Verify provenance and SPDX SBOM attestations cryptographically for
     `renanfenrich/staff-aws-platform-blueprint` and confirm both subject digests
     equal the published image digest.
@@ -195,9 +196,9 @@ variables are independently verified.
 - **Digest resolution failure:** preserve the push output and evidence, inspect
   the exact trace tag with a human operator, and do not guess a digest.
 - **Attestation registry authentication failure:** preserve the pushed digest
-  and evidence, confirm standard ECR login and default Docker configuration
-  cleanup, and fix the workflow through review; do not expose or persist
-  registry credentials or recover the existing digest in this workflow.
+  and evidence, confirm the isolated temporary Docker configuration and
+  attestation home cleanup, and fix the workflow through review; do not expose
+  or persist registry credentials or recover the existing digest in this workflow.
 - **Later ECR findings contradict Trivy:** stop deployment selection, preserve
   both reports, investigate database and coverage differences, and publish a
   remediated image through a new reviewed run.
