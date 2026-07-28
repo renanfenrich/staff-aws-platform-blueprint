@@ -1,13 +1,14 @@
 # Operational runbooks
 
 These runbooks describe controlled workflows. The AWS bootstrap, protected
-GitHub environment, lifecycle preview, and OIDC smoke have been exercised, but
-bootstrap state has not been migrated. Two image-publication runs pushed
-immutable digests but stopped before attestation: the first waited on ECR Basic
-scanning and the later run exposed an attestation registry credential
-compatibility gap. The repository has no plan, apply, deployment, promotion,
-recovery, or destroy workflow. Do not substitute ad hoc Terraform or console
-changes.
+GitHub environment, lifecycle preview, OIDC smoke, and first successful image
+publication have been exercised, but bootstrap state has not been migrated. The
+successful run published an immutable digest, created and verified provenance
+and SPDX SBOM attestations, and observed ECR scan-on-push and active OCI
+referrers. A live publisher-policy refresh plan produced zero changes. No ECS
+deployment or runtime Terraform apply has occurred. The repository has no plan,
+apply, deployment, promotion, recovery, or destroy workflow. Do not substitute
+ad hoc Terraform or console changes.
 
 ## External GitHub sandbox prerequisites
 

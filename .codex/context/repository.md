@@ -31,10 +31,9 @@
   repository with `prevent_destroy`, no force deletion, and a lifecycle rule
   retaining the newest 30 `git-` subject images without generic untagged cleanup.
 - Publisher IAM: a separate OIDC role can authenticate, publish, inspect, and
-  verify only the project repository; desired configuration has no scan-findings
-  access, deletion, repository management, state, ECS, EC2, IAM mutation,
-  secret, or role-chaining action. The live scan permission narrowing awaits an
-  approved apply.
+  verify only the project repository; its live refresh plan matches the desired
+  no-scan-findings configuration, with no deletion, repository management,
+  state, ECS, EC2, IAM mutation, secret, or role-chaining action.
 - Artifact contract: manual publication builds exactly once for Linux X86_64,
   uses pinned Trivy as the authoritative pre-authentication OS and library gate,
   creates an SPDX SBOM, transfers a checksummed archive, and defines digest-bound
@@ -44,17 +43,18 @@
 - Runtime image contract: the 26-resource enabled graph consumes an explicit
   external repository ARN and URL plus that exact URL at a `sha256` digest.
 - Provisioning: Terraform only; no ad hoc console changes.
-- Delivery target: GitHub Actions with AWS OIDC. Manual identity smoke and
-  image-publication workflows exist; bootstrap, OIDC smoke, Trivy scanning, and
-  one immutable push were exercised. Attestation, state migration, runtime
-  initialization, plan, apply, destroy, and promotion remain deferred.
+- Delivery target: GitHub Actions with AWS OIDC. Bootstrap, OIDC smoke, Trivy
+  scanning, immutable digest publication, provenance and SPDX SBOM attestations,
+  cryptographic verification, and OCI referrers were exercised successfully.
+  State migration, runtime initialization, plan, apply, destroy, and promotion
+  remain deferred.
 - Environments: disposable sandbox graph only; production is documented but
   rejected by the public-task network profile.
 - Base branch: `develop`; stable releases promote to `main`.
 - External boundary: the `sandbox` GitHub environment is restricted to
   `develop`, has a required reviewer and publication variables, and passed OIDC
-  smoke. Protection drift, asynchronous ECR findings, and attestation
-  verification remain operator concerns.
+  smoke. Protection drift and asynchronous ECR findings remain operator
+  concerns.
 
 Read `docs/architecture.md` and `docs/production-readiness.md` before changing
 infrastructure boundaries.
