@@ -1,10 +1,12 @@
 # Operational runbooks
 
-These runbooks describe controlled future workflows. Terraform represents AWS
-OIDC, remote state, ECR, and publisher infrastructure, but none exists and no
-state has been migrated. A manual image-publication workflow is defined but has
-not run. The repository has no plan, apply, deployment, promotion, recovery, or
-destroy workflow. Do not substitute ad hoc Terraform or console changes.
+These runbooks describe controlled workflows. The AWS bootstrap, protected
+GitHub environment, lifecycle preview, and OIDC smoke have been exercised, but
+bootstrap state has not been migrated. The first image-publication run pushed
+one immutable digest and stopped before attestation while ECR Basic scanning
+remained `IN_PROGRESS`. The repository has no plan, apply, deployment,
+promotion, recovery, or destroy workflow. Do not substitute ad hoc Terraform or
+console changes.
 
 ## External GitHub sandbox prerequisites
 
@@ -26,8 +28,9 @@ Before any OIDC run, a repository administrator must:
    publisher trust and permissions, lifecycle preview, environment restrictions,
    non-secret variables, and the successful OIDC smoke are verified.
 
-The environment endpoint returned 404 on 2026-07-27. Referencing `sandbox` in a
-workflow is not evidence that these controls exist. Pull requests must never
+The `sandbox` environment was configured and exercised on 2026-07-28. Future
+runs must still verify that its `develop` branch restriction, required reviewer,
+variables, and readiness attestations have not drifted. Pull requests must never
 trigger AWS authentication.
 
 ## Future two-phase state and OIDC bootstrap
@@ -160,9 +163,9 @@ variables are independently verified.
 11. Record the ECR-resolved digest and immutable
     `ECR_REPOSITORY_URL@sha256:DIGEST`; never select the traceability tag for
     Terraform.
-12. Review the bounded ECR scan and require zero HIGH and CRITICAL findings.
-    If the account scanning mode does not return the expected API status, stop
-    and decide the account-level scanning model; do not skip the gate.
+12. Treat ECR Basic scan on push as asynchronous advisory evidence; publication
+    does not poll it. Review later findings before any deployment or promotion,
+    and stop selection of the digest if they contradict the accepted Trivy gate.
 13. Verify provenance and SPDX SBOM attestations cryptographically for
     `renanfenrich/staff-aws-platform-blueprint` and confirm both subject digests
     equal the published image digest.
@@ -188,8 +191,9 @@ variables are independently verified.
   dispatch.
 - **Digest resolution failure:** preserve the push output and evidence, inspect
   the exact trace tag with a human operator, and do not guess a digest.
-- **ECR scan fails or times out:** keep the image, mark the run failed, record
-  the observed status, and resolve scanning configuration before any use.
+- **Later ECR findings contradict Trivy:** stop deployment selection, preserve
+  both reports, investigate database and coverage differences, and publish a
+  remediated image through a new reviewed run.
 - **Image pushed but provenance missing:** record the immutable digest and
   missing provenance, do not delete or rebuild under the same tag, and design a
   separate reviewed existing-digest recovery workflow if needed.

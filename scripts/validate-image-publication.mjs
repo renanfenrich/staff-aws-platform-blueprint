@@ -114,9 +114,10 @@ assert.doesNotMatch(workflow, /(^|[^a-z])latest([^a-z]|$)/i);
 assert.doesNotMatch(workflow, /TRACEABILITY_TAG:.*(develop|stable)/);
 assert.match(publish, /ECR_REPOSITORY_URL.*@\$\{registry_digest\}/);
 assert.match(publish, /aws ecr describe-images/);
-assert.match(publish, /aws ecr describe-image-scan-findings/);
-assert.match(publish, /HIGH.*CRITICAL|CRITICAL.*HIGH/);
-assert.match(publish, /attempt.*-le 12/);
+assert.doesNotMatch(
+  publish,
+  /describe-image-scan-findings|ecr-scan-results|bounded polling/,
+);
 
 const attestUses = [
   ...publish.matchAll(/uses: actions\/attest@[0-9a-f]{40} # v4\.2\.0/g),
@@ -210,6 +211,7 @@ assert.match(imageSbom, /--format spdx-json/);
 assert.match(publisher, /StringEquals/);
 assert.doesNotMatch(publisher, /StringLike/);
 assert.doesNotMatch(publisher, /ecr:\*/);
+assert.doesNotMatch(publisher, /ecr:DescribeImageScanFindings/);
 assert.match(publisher, /"ecr:GetAuthorizationToken"\n\s+Resource = "\*"/);
 for (const forbidden of [
   "ecr:BatchDeleteImage",

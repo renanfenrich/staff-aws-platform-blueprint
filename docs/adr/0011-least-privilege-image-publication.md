@@ -25,12 +25,12 @@ workflow requests 900 seconds and skips session tagging.
 
 The policy allows `ecr:GetAuthorizationToken` on `"*"` because AWS cannot
 resource-scope that operation. On the exact repository ARN it allows layer
-upload, image manifest publication, image reads, digest and scan inspection,
-and `DescribeRepositories` to verify the configured repository, immutable-tag,
-scan-on-push, and encryption controls. `ListImageReferrers` is authorized by
-the included `BatchGetImage` action. No delete, repository mutation, state,
-ECS, EC2, IAM mutation, CloudWatch mutation, secret, KMS administration, or
-role-chaining action is granted.
+upload, image manifest publication, image reads, digest inspection, and
+`DescribeRepositories` to verify the configured repository, immutable-tag,
+scan-on-push, and encryption controls. `ListImageReferrers` is authorized by the
+included `BatchGetImage` action. The publisher does not read scan findings. No
+delete, repository mutation, state, ECS, EC2, IAM mutation, CloudWatch mutation,
+secret, KMS administration, or role-chaining action is granted.
 
 ## Environment boundary
 

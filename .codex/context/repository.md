@@ -13,7 +13,7 @@
   provider.
 - State foundation: one SSE-S3 encrypted, versioned, ownership-enforced bucket
   with full public-access block, TLS-only policy, 90-day noncurrent retention,
-  and native S3 lockfiles. The graph has only mock-provider evidence.
+  and native S3 lockfiles. The bootstrap has been applied from local state.
 - State keys: human-controlled bootstrap state uses
   `staff-aws-platform-blueprint/bootstrap/terraform.tfstate`; the GitHub role
   accesses only `staff-aws-platform-blueprint/sandbox/terraform.tfstate` and
@@ -30,27 +30,30 @@
 - Artifact ownership: bootstrap owns an immutable, scan-on-push, SSE-S3 ECR
   repository with `prevent_destroy`, no force deletion, and a lifecycle rule
   retaining the newest 30 `git-` subject images without generic untagged cleanup.
-- Publisher IAM: a separate OIDC role can authenticate, publish, inspect, scan,
-  and verify only the project repository; it has no deletion, repository
-  management, state, ECS, EC2, IAM mutation, secret, or role-chaining action.
+- Publisher IAM: a separate OIDC role can authenticate, publish, inspect, and
+  verify only the project repository; desired configuration has no scan-findings
+  access, deletion, repository management, state, ECS, EC2, IAM mutation,
+  secret, or role-chaining action. The live scan permission narrowing awaits an
+  approved apply.
 - Artifact contract: manual publication builds exactly once for Linux X86_64,
-  scans and creates an SPDX SBOM before AWS authentication, transfers a
-  checksummed archive, and defines digest-bound provenance and SBOM
-  attestations. The workflow has not run.
+  uses pinned Trivy as the authoritative pre-authentication OS and library gate,
+  creates an SPDX SBOM, transfers a checksummed archive, and defines digest-bound
+  provenance and SBOM attestations. ECR Basic scanning is asynchronous advisory
+  evidence.
 - Runtime image contract: the 26-resource enabled graph consumes an explicit
   external repository ARN and URL plus that exact URL at a `sha256` digest.
 - Provisioning: Terraform only; no ad hoc console changes.
 - Delivery target: GitHub Actions with AWS OIDC. Manual identity smoke and
-  image-publication workflows exist; bootstrap execution, actual image
-  publication, state migration, runtime initialization, plan, apply, destroy,
-  and promotion remain deferred.
+  image-publication workflows exist; bootstrap, OIDC smoke, Trivy scanning, and
+  one immutable push were exercised. Attestation, state migration, runtime
+  initialization, plan, apply, destroy, and promotion remain deferred.
 - Environments: disposable sandbox graph only; production is documented but
   rejected by the public-task network profile.
 - Base branch: `develop`; stable releases promote to `main`.
-- External boundary: the `sandbox` GitHub environment returned 404 during this
-  work and was not created. Protection, four non-secret publication variables,
-  two readiness variables, ECR lifecycle preview, bootstrap apply, OIDC smoke,
-  ECR scan behavior, and attestation verification remain operator prerequisites.
+- External boundary: the `sandbox` GitHub environment is restricted to
+  `develop`, has a required reviewer and publication variables, and passed OIDC
+  smoke. Protection drift, asynchronous ECR findings, and attestation
+  verification remain operator concerns.
 
 Read `docs/architecture.md` and `docs/production-readiness.md` before changing
 infrastructure boundaries.

@@ -15,7 +15,8 @@ is one immutable ECR digest.
 - one X86_64 image build, Trivy gate, SPDX JSON SBOM, and archive checksum
 - unique `git-` traceability tag and registry digest resolution
 - digest-bound provenance and SBOM attestations published as OCI referrers
-- bounded ECR scan polling and cryptographic attestation verification
+- authoritative pre-authentication Trivy gating, asynchronous ECR scan on push,
+  and cryptographic attestation verification
 - mock-provider tests, static workflow checks, local targets, ADRs, and runbooks
 
 ## Safety boundaries
@@ -44,7 +45,6 @@ is one immutable ECR digest.
 
 ## Next expected slice
 
-Apply and verify the bootstrap through the approved human process, protect the
-GitHub `sandbox` environment, preview ECR lifecycle behavior, and execute the
-OIDC smoke and first image publication before adding a separate reviewed
-Terraform plan workflow.
+Apply the reviewed publisher-policy narrowing, execute a new image publication
+through both attestations, migrate bootstrap state, and then add a separate
+reviewed Terraform plan workflow.
