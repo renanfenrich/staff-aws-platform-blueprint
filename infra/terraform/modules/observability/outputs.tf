@@ -9,6 +9,7 @@ output "log_group_name" {
 output "test_contract" {
   value = {
     mandatory_tags    = aws_cloudwatch_log_group.application.tags
+    resource_count    = 1
     retention_in_days = aws_cloudwatch_log_group.application.retention_in_days
   }
 }

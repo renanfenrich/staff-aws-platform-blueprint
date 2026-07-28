@@ -20,6 +20,7 @@ output "test_contract" {
     alb_egress_group_id    = aws_vpc_security_group_egress_rule.alb_to_task.referenced_security_group_id
     alb_egress_port        = aws_vpc_security_group_egress_rule.alb_to_task.from_port
     mandatory_tags         = aws_vpc.this.tags
+    resource_count         = 16
     subnet_zones           = [for zone in var.availability_zones : aws_subnet.public[zone].availability_zone]
     task_ingress_cidr      = aws_vpc_security_group_ingress_rule.task_from_alb.cidr_ipv4
     task_ingress_group_id  = aws_vpc_security_group_ingress_rule.task_from_alb.security_group_id

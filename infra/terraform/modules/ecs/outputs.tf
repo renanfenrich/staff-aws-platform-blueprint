@@ -13,5 +13,6 @@ output "test_contract" {
     container_definition     = jsondecode(aws_ecs_task_definition.application.container_definitions)[0]
     desired_count            = aws_ecs_service.application.desired_count
     mandatory_tags           = aws_ecs_cluster.this.tags
+    resource_count           = 3
   }
 }

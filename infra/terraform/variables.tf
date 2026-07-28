@@ -42,7 +42,7 @@ variable "aws_region" {
 }
 
 variable "container_image" {
-  description = "Immutable container image reference. Required as a sha256 digest when deployment is enabled."
+  description = "Immutable image in the externally managed ECR repository. Required as a sha256 digest when enabled."
   type        = string
   default     = ""
   nullable    = false
@@ -50,9 +50,15 @@ variable "container_image" {
   validation {
     condition = (
       !var.deployment_enabled ||
-      can(regex("^[^[:space:]]+@sha256:[0-9a-f]{64}$", var.container_image))
+      (
+        can(regex(
+          "^[0-9]{12}\\.dkr\\.ecr\\.[a-z]{2}(-gov)?-[a-z]+-[0-9]+\\.amazonaws\\.com(\\.cn)?/[a-z0-9]+([._/-][a-z0-9]+)*@sha256:[0-9a-f]{64}$",
+          var.container_image
+        )) &&
+        try(split("@", var.container_image)[0] == var.ecr_repository_url, false)
+      )
     )
-    error_message = "container_image must be a non-empty sha256 digest reference when deployment_enabled is true."
+    error_message = "container_image must be the configured private ECR repository URL plus an exact sha256 digest."
   }
 
   validation {
@@ -91,11 +97,40 @@ variable "desired_task_count" {
   }
 }
 
-variable "ecr_force_delete" {
-  description = "Allow repository deletion with images. Keep false except for an explicitly reviewed cleanup."
-  type        = bool
-  default     = false
+variable "ecr_repository_arn" {
+  description = "Existing private ECR repository ARN owned by the bootstrap foundation."
+  type        = string
+  default     = ""
   nullable    = false
+
+  validation {
+    condition = (
+      !var.deployment_enabled ||
+      can(regex(
+        "^arn:(aws|aws-us-gov|aws-cn):ecr:[a-z]{2}(-gov)?-[a-z]+-[0-9]+:[0-9]{12}:repository/[a-z0-9]+([._/-][a-z0-9]+)*$",
+        var.ecr_repository_arn
+      ))
+    )
+    error_message = "ecr_repository_arn must be a valid private ECR repository ARN when deployment is enabled."
+  }
+}
+
+variable "ecr_repository_url" {
+  description = "Existing private ECR repository URL owned by the bootstrap foundation."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition = (
+      !var.deployment_enabled ||
+      can(regex(
+        "^[0-9]{12}\\.dkr\\.ecr\\.[a-z]{2}(-gov)?-[a-z]+-[0-9]+\\.amazonaws\\.com(\\.cn)?/[a-z0-9]+([._/-][a-z0-9]+)*$",
+        var.ecr_repository_url
+      ))
+    )
+    error_message = "ecr_repository_url must be a valid private ECR repository URL when deployment is enabled."
+  }
 }
 
 variable "environment" {

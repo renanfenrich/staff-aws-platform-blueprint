@@ -9,8 +9,8 @@ output "application_task_role_arn" {
 }
 
 output "ecr_repository_url" {
-  description = "ECR repository URL, or null when deployment is disabled."
-  value       = try(module.ecr[0].repository_url, null)
+  description = "Externally managed ECR repository URL, or null when deployment is disabled."
+  value       = var.deployment_enabled ? var.ecr_repository_url : null
 }
 
 output "ecs_cluster_name" {

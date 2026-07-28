@@ -3,37 +3,43 @@
 Build a production-oriented AWS platform blueprint for a small containerized
 API, delivered through Terraform and GitHub Actions.
 
-## Current slice: remote-state and OIDC foundation
+## Current slice: immutable image publication foundation
 
-Represent the security prerequisites required before an AWS sandbox plan or
-deployment workflow can exist:
+Resolve the first-deployment image and registry ordering problem before an AWS
+sandbox plan can reference a real application digest:
 
-- an isolated, default-disabled Terraform bootstrap root;
-- an encrypted, versioned, private S3 state bucket with native lockfiles;
-- repository-ID and `sandbox` environment-bound GitHub OIDC;
-- a least-privilege sandbox state role;
-- partial backend configuration for the runtime root;
-- deterministic mock-provider and static security tests;
-- a manual, non-mutating identity smoke workflow;
-- bootstrap, recovery, and state-migration documentation.
+- move the protected ECR repository into the bootstrap lifecycle;
+- add a separate exact-subject OIDC image-publisher role;
+- make runtime Terraform consume an external repository and matching digest;
+- define manual-only preflight, build, and publish jobs;
+- build once for Linux X86_64, scan before AWS authentication, and generate an
+  SPDX JSON SBOM from that same image;
+- transfer the checksummed image archive without rebuilding;
+- publish a unique traceability tag and resolve one immutable ECR digest;
+- publish and verify digest-bound provenance and SBOM attestations;
+- preserve credential-free local, pull-request, and mock-provider validation.
 
 ## Scope boundary
 
-This slice does not create AWS resources, migrate state, create or protect a
-GitHub environment, publish an image, enable the runtime graph, or add plan,
-apply, deployment, promotion, destroy, workload-management, or production
-automation.
+This slice does not apply Terraform, create ECR, migrate state, initialize a
+remote backend, authenticate to AWS, publish an image, create or protect a
+GitHub environment, enable the runtime graph, update ECS, register a task
+definition, or add plan, apply, deployment, promotion, destroy, recovery, or
+production automation.
 
 ## Completion evidence
 
 - `make validate`
+- `make security`
 - `make tf-plan`
 - `make tf-test`
-- `make bootstrap-validate`
 - `make bootstrap-plan-disabled`
 - `make bootstrap-test`
-- `make security`
+- `make image-build`
+- `make image-scan`
+- `make image-sbom`
+- `make image-publication-check`
 - `git diff --check`
-- reviewed diff with no credentials, wildcard trust, broad S3 access,
-  bootstrap-state access from GitHub, public state access, or unpinned
-  automation
+- reviewed diff with no runtime-owned ECR, broad publisher action, image
+  deletion, mutable tag, second build, pre-scan AWS authentication, static
+  credential, unpinned action, AWS mutation, or generated state and plan file

@@ -19,6 +19,7 @@ output "test_contract" {
     ownership                              = one(aws_s3_bucket_ownership_controls.state.rule).object_ownership
     prevent_destroy                        = true
     public_access_block                    = aws_s3_bucket_public_access_block.state
+    resource_count                         = 7
     tls_only_policy                        = local.tls_only_policy
     versioning_status                      = one(aws_s3_bucket_versioning.state.versioning_configuration).status
     website_configuration_is_present       = false

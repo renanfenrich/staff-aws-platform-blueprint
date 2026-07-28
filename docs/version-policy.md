@@ -15,6 +15,11 @@ maintenance or end of life.
   lockfile for each independent root.
 - Container bases use immutable digests and never `latest`.
 - GitHub Actions use full commit SHAs with readable release comments.
+- Local and publication image scanning and SPDX SBOM generation share the
+  digest-pinned Trivy `0.72.0` container and the same HIGH/CRITICAL,
+  ignore-unfixed failure policy.
+- The publication workflow uses the current pinned `actions/attest` interface;
+  deprecated provenance or standalone SBOM wrappers are not added.
 - Dependabot opens weekly updates against `develop` for npm, Docker, Terraform,
   and GitHub Actions.
 

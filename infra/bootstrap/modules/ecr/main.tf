@@ -1,5 +1,5 @@
 resource "aws_ecr_repository" "this" {
-  force_delete         = var.force_delete
+  force_delete         = false
   image_tag_mutability = "IMMUTABLE"
   name                 = var.name
   region               = var.region
@@ -13,6 +13,10 @@ resource "aws_ecr_repository" "this" {
   }
 
   tags = var.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_ecr_lifecycle_policy" "this" {
@@ -22,24 +26,12 @@ resource "aws_ecr_lifecycle_policy" "this" {
     rules = [
       {
         rulePriority = 1
-        description  = "Expire untagged images after seven days"
+        description  = "Retain the 30 newest published application images"
         selection = {
-          tagStatus   = "untagged"
-          countType   = "sinceImagePushed"
-          countUnit   = "days"
-          countNumber = 7
-        }
-        action = {
-          type = "expire"
-        }
-      },
-      {
-        rulePriority = 2
-        description  = "Retain at most 30 images"
-        selection = {
-          tagStatus   = "any"
-          countType   = "imageCountMoreThan"
-          countNumber = 30
+          tagStatus     = "tagged"
+          tagPrefixList = ["git-"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 30
         }
         action = {
           type = "expire"

@@ -7,7 +7,8 @@ locals {
     Project     = "staff-aws-platform-blueprint"
   }
 
-  sandbox_state_key = "staff-aws-platform-blueprint/sandbox/terraform.tfstate"
+  ecr_repository_name = "staff-aws-platform-blueprint-sandbox"
+  sandbox_state_key   = "staff-aws-platform-blueprint/sandbox/terraform.tfstate"
 }
 
 check "mandatory_tags" {
@@ -38,4 +39,24 @@ module "github_oidc" {
   state_bucket_arn      = module.state[0].bucket_arn
   state_key             = local.sandbox_state_key
   tags                  = local.mandatory_tags
+}
+
+module "ecr" {
+  count  = var.bootstrap_enabled ? 1 : 0
+  source = "./modules/ecr"
+
+  name   = local.ecr_repository_name
+  region = var.aws_region
+  tags   = local.mandatory_tags
+}
+
+module "ecr_publisher" {
+  count  = var.bootstrap_enabled ? 1 : 0
+  source = "./modules/ecr-publisher"
+
+  ecr_repository_arn       = module.ecr[0].repository_arn
+  github_oidc_provider_arn = module.github_oidc[0].provider_arn
+  github_subject           = var.github_oidc_subject
+  role_name                = "staff-aws-platform-blueprint-sandbox-image-publisher"
+  tags                     = local.mandatory_tags
 }

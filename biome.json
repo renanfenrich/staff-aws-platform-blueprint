@@ -3,6 +3,7 @@
   "files": {
     "includes": [
       "**",
+      "!.artifacts",
       "!dist",
       "!node_modules",
       "!infra/terraform/.terraform",

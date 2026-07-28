@@ -91,4 +91,4 @@ jobs:
         run: |
           make tf-format-check tf-validate tf-plan tf-test
           make bootstrap-format-check bootstrap-validate bootstrap-plan-disabled bootstrap-test
-          make aws-foundation-check workflow-lint
+          make aws-foundation-check image-publication-check workflow-lint

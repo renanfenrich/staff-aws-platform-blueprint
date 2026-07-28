@@ -10,6 +10,7 @@ mkdir -p "${trivy_cache}"
 
 npm audit --audit-level=high
 node "${repository_root}/scripts/validate-aws-foundation.mjs"
+node "${repository_root}/scripts/validate-image-publication.mjs"
 
 docker run --rm \
   --volume "${repository_root}:/repo" \
@@ -40,8 +41,9 @@ docker run --rm \
     --tf-vars /repo/infra/bootstrap/tests/security.tfvars \
     /repo/infra/bootstrap
 
-docker run --rm \
-  --volume "${trivy_cache}:/root/.cache/trivy" \
-  --volume /var/run/docker.sock:/var/run/docker.sock \
-  "${trivy_image}" \
-  image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "${scan_image_ref}"
+security_evidence=$(mktemp -d "${TMPDIR:-/tmp}/staff-image-security.XXXXXX")
+trap 'rm -rf "${security_evidence}"' EXIT HUP INT TERM
+"${repository_root}/scripts/image-scan.sh" \
+  "${scan_image_ref}" "${security_evidence}/trivy-results.json"
+"${repository_root}/scripts/image-sbom.sh" \
+  "${scan_image_ref}" "${security_evidence}/sbom.spdx.json"

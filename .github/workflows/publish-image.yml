@@ -1,0 +1,452 @@
+name: Publish immutable image
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: publish-image-${{ github.repository_id }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Verify image-publication readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      environment_name: ${{ steps.gate.outputs.environment_name }}
+    steps:
+      - name: Enforce trusted dispatch context
+        id: gate
+        env:
+          AWS_IMAGE_PUBLISH_READY: ${{ vars.AWS_IMAGE_PUBLISH_READY }}
+          AWS_OIDC_SANDBOX_READY: ${{ vars.AWS_OIDC_SANDBOX_READY }}
+          EXPECTED_REPOSITORY: renanfenrich/staff-aws-platform-blueprint
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]; then
+            echo "::error::Image publication is manual-only."
+            exit 1
+          fi
+          if [ "${GITHUB_REPOSITORY}" != "${EXPECTED_REPOSITORY}" ]; then
+            echo "::error::Image publication is restricted to the canonical repository."
+            exit 1
+          fi
+          if [ "${GITHUB_REF}" != "refs/heads/develop" ] || [ "${GITHUB_REF_TYPE}" != "branch" ]; then
+            echo "::error::Dispatch this workflow only from refs/heads/develop."
+            exit 1
+          fi
+          if [ "${AWS_OIDC_SANDBOX_READY}" != "true" ]; then
+            echo "::error::AWS_OIDC_SANDBOX_READY=true is required after reviewed sandbox OIDC preparation."
+            exit 1
+          fi
+          if [ "${AWS_IMAGE_PUBLISH_READY}" != "true" ]; then
+            echo "::error::AWS_IMAGE_PUBLISH_READY=true is required after registry, role, and environment verification."
+            exit 1
+          fi
+          echo "environment_name=sandbox" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build, scan, and capture evidence
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      LOCAL_IMAGE: staff-aws-platform-blueprint-api:build-${{ github.sha }}
+    steps:
+      - name: Check out the dispatched commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Build the publication image once
+        run: |
+          created="$(git show -s --format=%cI "${GITHUB_SHA}")"
+          docker build --platform linux/amd64 --provenance=false --sbom=false --tag "${LOCAL_IMAGE}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=git-${GITHUB_SHA}" \
+            --label "org.opencontainers.image.created=${created}" \
+            --label "org.opencontainers.image.title=staff-aws-platform-blueprint-api" .
+
+      - name: Scan the exact built image
+        run: ./scripts/image-scan.sh "${LOCAL_IMAGE}" evidence/trivy-results.json
+
+      - name: Generate an SPDX SBOM from the exact built image
+        run: ./scripts/image-sbom.sh "${LOCAL_IMAGE}" evidence/sbom.spdx.json
+
+      - name: Export the validated image and record checksums
+        run: |
+          mkdir -p transfer
+          docker save --output transfer/image.tar "${LOCAL_IMAGE}"
+          sha256sum transfer/image.tar > transfer/image-archive.sha256
+          cp transfer/image-archive.sha256 evidence/image-archive.sha256
+          image_id="$(docker image inspect --format '{{.Id}}' "${LOCAL_IMAGE}")"
+          archive_sha256="$(cut -d ' ' -f 1 transfer/image-archive.sha256)"
+          sbom_sha256="$(sha256sum evidence/sbom.spdx.json | cut -d ' ' -f 1)"
+          scanner_version="$(./scripts/image-scan.sh --version)"
+          jq -n \
+            --arg archive_sha256 "${archive_sha256}" \
+            --arg image_id "${image_id}" \
+            --arg platform "linux/amd64" \
+            --arg revision "${GITHUB_SHA}" \
+            --arg sbom_sha256 "${sbom_sha256}" \
+            --arg scanner_version "${scanner_version}" \
+            --arg source_repository "${GITHUB_REPOSITORY}" \
+            '{
+              archive_sha256: $archive_sha256,
+              image_id: $image_id,
+              platform: $platform,
+              revision: $revision,
+              sbom_sha256: $sbom_sha256,
+              scanner_version: $scanner_version,
+              source_repository: $source_repository
+            }' > evidence/image-build-metadata.json
+
+      - name: Transfer the run-scoped image archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-archive-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            transfer/image.tar
+            transfer/image-archive.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Preserve scan and SBOM evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-security-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            evidence/sbom.spdx.json
+            evidence/trivy-results.json
+            evidence/image-build-metadata.json
+            evidence/image-archive.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish and attest immutable digest
+    needs: [preflight, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: ${{ needs.preflight.outputs.environment_name }}
+      deployment: false
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      immutable_reference: ${{ steps.resolve.outputs.immutable_reference }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_IMAGE_PUBLISH_ROLE_ARN: ${{ vars.AWS_IMAGE_PUBLISH_ROLE_ARN }}
+      ECR_REPOSITORY_NAME: ${{ vars.ECR_REPOSITORY_NAME }}
+      ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+      LOCAL_IMAGE: staff-aws-platform-blueprint-api:build-${{ github.sha }}
+      TRACEABILITY_TAG: git-${{ github.sha }}-${{ github.run_id }}
+    steps:
+      - name: Download the exact built image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-archive-${{ github.run_id }}-${{ github.run_attempt }}
+          path: transfer
+
+      - name: Download the security evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-security-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence
+
+      - name: Verify archive, SBOM, and publication configuration
+        id: configuration
+        run: |
+          test -f transfer/image.tar
+          test -f transfer/image-archive.sha256
+          test -f evidence/sbom.spdx.json
+          test -f evidence/image-build-metadata.json
+          (
+            cd transfer
+            sha256sum --check image-archive.sha256
+          )
+          expected_sbom_sha256="$(jq -r '.sbom_sha256' evidence/image-build-metadata.json)"
+          actual_sbom_sha256="$(sha256sum evidence/sbom.spdx.json | cut -d ' ' -f 1)"
+          test "${expected_sbom_sha256}" = "${actual_sbom_sha256}"
+          if ! [[ "${ECR_REPOSITORY_URL}" =~ ^([0-9]{12})\.dkr\.ecr\.([a-z]{2}(-gov)?-[a-z]+-[0-9]+)\.amazonaws\.com(\.cn)?/([a-z0-9]+([._/-][a-z0-9]+)*)$ ]]; then
+            echo "::error::ECR_REPOSITORY_URL is not one exact private ECR repository URL."
+            exit 1
+          fi
+          account_id="${BASH_REMATCH[1]}"
+          repository_region="${BASH_REMATCH[2]}"
+          repository_name="${BASH_REMATCH[5]}"
+          if [ "${AWS_REGION}" != "${repository_region}" ]; then
+            echo "::error::AWS_REGION does not match ECR_REPOSITORY_URL."
+            exit 1
+          fi
+          if [ "${ECR_REPOSITORY_NAME}" != "${repository_name}" ]; then
+            echo "::error::ECR_REPOSITORY_NAME does not match ECR_REPOSITORY_URL."
+            exit 1
+          fi
+          if ! [[ "${AWS_IMAGE_PUBLISH_ROLE_ARN}" =~ ^arn:(aws|aws-us-gov|aws-cn):iam::${account_id}:role/staff-aws-platform-blueprint-sandbox-image-publisher$ ]]; then
+            echo "::error::AWS_IMAGE_PUBLISH_ROLE_ARN does not match the expected account and role."
+            exit 1
+          fi
+          docker_config="${RUNNER_TEMP}/staff-image-docker-config"
+          mkdir -p "${docker_config}"
+          echo "DOCKER_CONFIG=${docker_config}" >> "${GITHUB_ENV}"
+          docker load --input transfer/image.tar
+          docker image inspect "${LOCAL_IMAGE}" >/dev/null
+          echo "account_id=${account_id}" >> "${GITHUB_OUTPUT}"
+          echo "registry=${ECR_REPOSITORY_URL%%/*}" >> "${GITHUB_OUTPUT}"
+
+      - name: Configure 15-minute AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          audience: sts.amazonaws.com
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_IMAGE_PUBLISH_ROLE_ARN }}
+          role-duration-seconds: 900
+          role-session-name: staff-image-${{ github.run_id }}
+          role-skip-session-tagging: true
+
+      - name: Verify AWS account and repository controls
+        run: |
+          identity="$(aws sts get-caller-identity --output json)"
+          caller_account="$(jq -r '.Account' <<< "${identity}")"
+          caller_arn="$(jq -r '.Arn' <<< "${identity}")"
+          if [ "${caller_account}" != "${{ steps.configuration.outputs.account_id }}" ]; then
+            echo "::error::Assumed AWS account does not match the configured ECR registry."
+            exit 1
+          fi
+          partition="${caller_arn#arn:}"
+          partition="${partition%%:*}"
+          expected_repository_arn="arn:${partition}:ecr:${AWS_REGION}:${caller_account}:repository/${ECR_REPOSITORY_NAME}"
+          repository="$(aws ecr describe-repositories \
+            --repository-names "${ECR_REPOSITORY_NAME}" \
+            --output json)"
+          jq -e \
+            --arg account "${caller_account}" \
+            --arg arn "${expected_repository_arn}" \
+            --arg name "${ECR_REPOSITORY_NAME}" \
+            --arg url "${ECR_REPOSITORY_URL}" \
+            '.repositories | length == 1 and
+             .[0].registryId == $account and
+             .[0].repositoryArn == $arn and
+             .[0].repositoryName == $name and
+             .[0].repositoryUri == $url and
+             .[0].imageTagMutability == "IMMUTABLE" and
+             .[0].imageScanningConfiguration.scanOnPush == true and
+             .[0].encryptionConfiguration.encryptionType == "AES256"' \
+            <<< "${repository}" >/dev/null
+
+      - name: Authenticate only to the configured ECR registry
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+        with:
+          registries: ${{ steps.configuration.outputs.account_id }}
+          mask-password: true
+
+      - name: Push the already-built image once
+        id: push
+        run: |
+          tag_check_error="${RUNNER_TEMP}/ecr-tag-check.err"
+          if aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --image-ids "imageTag=${TRACEABILITY_TAG}" >/dev/null 2>"${tag_check_error}"; then
+            echo "::error::Traceability tag already exists; immutable publication will not overwrite it."
+            exit 1
+          fi
+          if ! grep -q "ImageNotFoundException" "${tag_check_error}"; then
+            cat "${tag_check_error}" >&2
+            exit 1
+          fi
+          published_tag="${ECR_REPOSITORY_URL}:${TRACEABILITY_TAG}"
+          docker tag "${LOCAL_IMAGE}" "${published_tag}"
+          docker push "${published_tag}" | tee "${RUNNER_TEMP}/docker-push.log"
+          push_digest="$(sed -n 's/^.*digest: \(sha256:[0-9a-f]\{64\}\).*$/\1/p' "${RUNNER_TEMP}/docker-push.log" | tail -n 1)"
+          if ! [[ "${push_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Docker push did not return one valid sha256 digest."
+            exit 1
+          fi
+          echo "digest=${push_digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve and record the immutable registry digest
+        id: resolve
+        run: |
+          registry_digest="$(aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --image-ids "imageTag=${TRACEABILITY_TAG}" \
+            --query 'imageDetails[].imageDigest' \
+            --output text)"
+          if ! [[ "${registry_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The traceability tag did not resolve to exactly one sha256 digest."
+            exit 1
+          fi
+          if [ "${registry_digest}" != "${{ steps.push.outputs.digest }}" ]; then
+            echo "::error::Registry digest does not match the digest reported by the push."
+            exit 1
+          fi
+          immutable_reference="${ECR_REPOSITORY_URL}@${registry_digest}"
+          sbom_sha256="$(jq -r '.sbom_sha256' evidence/image-build-metadata.json)"
+          scanner_version="$(jq -r '.scanner_version' evidence/image-build-metadata.json)"
+          publication_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n \
+            --arg digest "${registry_digest}" \
+            --arg immutable_reference "${immutable_reference}" \
+            --arg platform "linux/amd64" \
+            --arg publication_timestamp "${publication_timestamp}" \
+            --arg repository "${ECR_REPOSITORY_URL}" \
+            --arg sbom_sha256 "${sbom_sha256}" \
+            --arg scanner_version "${scanner_version}" \
+            --arg source_commit "${GITHUB_SHA}" \
+            --arg source_repository "${GITHUB_REPOSITORY}" \
+            --arg tag "${TRACEABILITY_TAG}" \
+            --arg workflow_run_attempt "${GITHUB_RUN_ATTEMPT}" \
+            --arg workflow_run_id "${GITHUB_RUN_ID}" \
+            '{
+              repository: $repository,
+              tag: $tag,
+              digest: $digest,
+              immutable_reference: $immutable_reference,
+              source_repository: $source_repository,
+              source_commit: $source_commit,
+              workflow_run_id: $workflow_run_id,
+              workflow_run_attempt: $workflow_run_attempt,
+              platform: $platform,
+              sbom_sha256: $sbom_sha256,
+              scanner_version: $scanner_version,
+              publication_timestamp: $publication_timestamp
+            }' > evidence/published-image.json
+          echo "digest=${registry_digest}" >> "${GITHUB_OUTPUT}"
+          echo "immutable_reference=${immutable_reference}" >> "${GITHUB_OUTPUT}"
+
+      - name: Require a successful ECR scan with no high findings
+        run: |
+          attempt=1
+          scan_error="${RUNNER_TEMP}/ecr-scan.err"
+          while [ "${attempt}" -le 12 ]; do
+            if ! aws ecr describe-image-scan-findings \
+              --repository-name "${ECR_REPOSITORY_NAME}" \
+              --image-id "imageDigest=${{ steps.resolve.outputs.digest }}" \
+              --output json > evidence/ecr-scan-results.json 2>"${scan_error}"; then
+              if grep -q "ScanNotFoundException" "${scan_error}"; then
+                status="SCAN_NOT_FOUND"
+                jq -n --arg status "${status}" '{imageScanStatus: {status: $status}}' \
+                  > evidence/ecr-scan-results.json
+              else
+                cp "${scan_error}" evidence/ecr-scan-error.txt
+                echo "::error::ECR scan findings could not be read; verify the account scanning mode."
+                exit 1
+              fi
+            else
+              status="$(jq -r '.imageScanStatus.status // "UNKNOWN"' evidence/ecr-scan-results.json)"
+            fi
+            if [ "${status}" = "COMPLETE" ]; then
+              high="$(jq -r '.imageScanFindings.findingSeverityCounts.HIGH // 0' evidence/ecr-scan-results.json)"
+              critical="$(jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL // 0' evidence/ecr-scan-results.json)"
+              if [ "${high}" -ne 0 ] || [ "${critical}" -ne 0 ]; then
+                echo "::error::ECR scan reported HIGH or CRITICAL findings."
+                exit 1
+              fi
+              break
+            fi
+            case "${status}" in
+              FAILED|UNSUPPORTED_IMAGE|FINDINGS_UNAVAILABLE|SCAN_ELIGIBILITY_EXPIRED|LIMIT_EXCEEDED)
+                echo "::error::ECR scan ended with status ${status}."
+                exit 1
+                ;;
+            esac
+            if [ "${attempt}" -eq 12 ]; then
+              echo "::error::ECR scan did not complete within the bounded polling window; last status: ${status}."
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+
+      - name: Generate and publish digest-bound provenance
+        id: provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ vars.ECR_REPOSITORY_URL }}
+          subject-digest: ${{ steps.resolve.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Generate and publish the digest-bound SBOM attestation
+        id: sbom_attestation
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ vars.ECR_REPOSITORY_URL }}
+          subject-digest: ${{ steps.resolve.outputs.digest }}
+          sbom-path: evidence/sbom.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Verify the published image and both attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          resolved_again="$(aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --image-ids "imageTag=${TRACEABILITY_TAG}" \
+            --query 'imageDetails[].imageDigest' \
+            --output text)"
+          test "${resolved_again}" = "${{ steps.resolve.outputs.digest }}"
+          docker buildx imagetools inspect "${{ steps.resolve.outputs.immutable_reference }}" >/dev/null
+          gh attestation verify "oci://${{ steps.resolve.outputs.immutable_reference }}" \
+            --repo "renanfenrich/staff-aws-platform-blueprint" \
+            --bundle-from-oci \
+            --source-digest "${GITHUB_SHA}" \
+            --source-ref "refs/heads/develop"
+          gh attestation verify "oci://${{ steps.resolve.outputs.immutable_reference }}" \
+            --repo "renanfenrich/staff-aws-platform-blueprint" \
+            --bundle-from-oci \
+            --predicate-type "https://spdx.dev/Document/v2.3" \
+            --source-digest "${GITHUB_SHA}" \
+            --source-ref "refs/heads/develop"
+          aws ecr list-image-referrers \
+            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --subject-id "imageDigest=${{ steps.resolve.outputs.digest }}" \
+            --output json > evidence/ecr-referrers.json
+          jq -e '[.referrers[] | select(.artifactStatus == "ACTIVE")] | length >= 2' \
+            evidence/ecr-referrers.json >/dev/null
+
+      - name: Report immutable publication outcome
+        if: always() && steps.push.outcome == 'success'
+        env:
+          IMMUTABLE_REFERENCE: ${{ steps.resolve.outputs.immutable_reference }}
+          PUSH_DIGEST: ${{ steps.push.outputs.digest }}
+          PROVENANCE_OUTCOME: ${{ steps.provenance.outcome }}
+          SBOM_ATTESTATION_OUTCOME: ${{ steps.sbom_attestation.outcome }}
+        run: |
+          reference="${IMMUTABLE_REFERENCE}"
+          if [ -z "${reference}" ]; then
+            reference="${ECR_REPOSITORY_URL}@${PUSH_DIGEST}"
+          fi
+          {
+            echo "## Immutable image publication"
+            echo
+            echo "- Immutable reference: \`${reference}\`"
+            echo "- Provenance attestation: ${PROVENANCE_OUTCOME}"
+            echo "- SBOM attestation: ${SBOM_ATTESTATION_OUTCOME}"
+            echo "- No ECS update or Terraform operation is part of this workflow."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Preserve post-push evidence
+        if: always() && steps.push.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-publication-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove transient registry authentication
+        if: always()
+        run: |
+          docker logout "${{ steps.configuration.outputs.registry }}" >/dev/null 2>&1 || true
+          rm -f "${RUNNER_TEMP}/staff-image-docker-config/config.json"
