@@ -246,6 +246,14 @@ jobs:
           registries: ${{ steps.configuration.outputs.account_id }}
           mask-password: true
 
+      - name: Expose scoped registry authentication to attest
+        run: |
+          test ! -e "${HOME}/.docker/config.json"
+          jq -e --arg registry "${{ steps.configuration.outputs.registry }}" \
+            '.auths | keys | any(. == $registry or . == ("https://" + $registry))' \
+            "${DOCKER_CONFIG}/config.json" >/dev/null
+          install -D -m 600 "${DOCKER_CONFIG}/config.json" "${HOME}/.docker/config.json"
+
       - name: Push the already-built image once
         id: push
         run: |
@@ -403,3 +411,4 @@ jobs:
         run: |
           docker logout "${{ steps.configuration.outputs.registry }}" >/dev/null 2>&1 || true
           rm -f "${RUNNER_TEMP}/staff-image-docker-config/config.json"
+          rm -f "${HOME}/.docker/config.json"
