@@ -26,6 +26,13 @@ updates:
       day: monday
     target-branch: develop
 
+  - package-ecosystem: terraform
+    directory: /infra/bootstrap
+    schedule:
+      interval: weekly
+      day: monday
+    target-branch: develop
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -2,11 +2,80 @@
 
 ## Status and scope
 
-Terraform represents the disposable sandbox network and ECS runtime described
-below. `deployment_enabled` defaults to `false`, so the normal local plan has
-zero AWS resource changes and does not authenticate to AWS. The enabled graph
-has been validated only with Terraform's mock AWS provider; it has not been
-applied or operationally tested in AWS.
+Terraform represents the disposable sandbox runtime plus a separate state and
+identity bootstrap. `deployment_enabled` and `bootstrap_enabled` both default
+to `false`; local plans contain zero AWS resource changes and do not authenticate
+to AWS. Enabled graphs have been validated only with mock AWS providers. No
+resource, remote state, OIDC session, or deployment has been operationally
+tested in AWS.
+
+## State and identity bootstrap
+
+```mermaid
+flowchart LR
+  Operator[Short-lived human operator] --> Bootstrap[Local-state bootstrap root]
+  Bootstrap --> Bucket[Encrypted versioned S3 bucket]
+  Bootstrap --> Provider[GitHub OIDC provider or external ARN]
+  Provider --> Role[Sandbox state role]
+  Workflow[Manual protected-environment smoke] -->|exact OIDC subject| Role
+  Role -->|Get and Put| State[Sandbox state object]
+  Role -->|Get, Put, and Delete| Lock[Sandbox lock object]
+  Operator -->|human-only boundary| BootstrapState[Bootstrap state object]
+```
+
+The bootstrap root is isolated under `infra/bootstrap` and initially keeps
+local state. When enabled in a future approved operation, it represents ten AWS
+resources: one S3 bucket plus ownership controls, public-access block,
+versioning, SSE-S3 encryption, lifecycle policy, and TLS-only bucket policy;
+one GitHub OIDC provider, IAM role, and inline policy. Referencing an existing
+account-level provider reduces the inventory to nine and never manages the
+shared provider.
+
+The bucket has no ACL, website, Object Lock, replication, cross-account grant,
+or logging bucket. It uses Bucket Owner Enforced ownership, all four public
+access blocks, AES-256 default encryption, versioning, accidental-destroy
+protection, a 90-day noncurrent-version recovery window, and seven-day cleanup
+of incomplete multipart uploads. Current state never expires.
+
+The partial runtime S3 backend uses encryption and native `.tflock` locking.
+Credentials remain process-local from a future short-lived OIDC session and
+must never enter backend configuration. DynamoDB locking is not used.
+
+## State keys and permissions
+
+| Object | Owner | Allowed object actions |
+| --- | --- | --- |
+| `staff-aws-platform-blueprint/bootstrap/terraform.tfstate` | Human bootstrap operator | Not granted to GitHub |
+| `staff-aws-platform-blueprint/bootstrap/terraform.tfstate.tflock` | Human bootstrap operator | Not granted to GitHub |
+| `staff-aws-platform-blueprint/sandbox/terraform.tfstate` | GitHub sandbox state role | `GetObject`, `PutObject` |
+| `staff-aws-platform-blueprint/sandbox/terraform.tfstate.tflock` | GitHub sandbox state role | `GetObject`, `PutObject`, `DeleteObject` |
+
+The state role may list only the exact sandbox state and lock prefixes and read
+bucket location, versioning, encryption, and public-access-block settings. It
+has no workload-management action, state deletion, role chaining, or bootstrap
+state access.
+
+## GitHub identity boundary
+
+GitHub API evidence on 2026-07-27 returned owner ID `1413054`, repository ID
+`1314297578`, and immutable prefix
+`repo:renanfenrich@1413054/staff-aws-platform-blueprint@1314297578`. The role
+therefore requires:
+
+```text
+aud = sts.amazonaws.com
+sub = repo:renanfenrich@1413054/staff-aws-platform-blueprint@1314297578:environment:sandbox
+```
+
+Both conditions use `StringEquals`. The provider URL is exactly
+`https://token.actions.githubusercontent.com`; no maintained certificate
+thumbprint is configured. The role session maximum is one hour, while the smoke
+workflow requests 15 minutes.
+
+Only the manual identity job receives `id-token: write`. Its preflight requires
+an operator readiness attestation before entering `sandbox`. The GitHub
+environment did not exist when inspected and is an external prerequisite, so
+this repository does not claim that branch limits or review protection exist.
 
 ## Implemented sandbox architecture
 
@@ -107,12 +176,12 @@ to seven days, and the log group is disposable with the sandbox.
 
 ## Cost gate and sandbox cost model
 
-Every cost-bearing module uses the root `deployment_enabled` gate. Its default
-is `false`; disabled outputs are null or empty. The local plan uses non-secret,
+Every runtime module uses `deployment_enabled`; every bootstrap module uses
+`bootstrap_enabled`. Both default to `false`, disabled outputs are null or
+empty, and JSON checks reject any resource change. Local plans use non-secret,
 process-local provider placeholders because the AWS provider SDK requires a
-credential-shaped value, while provider validation, metadata lookup, account
-lookup, refresh, and all resource creation are disabled. A plan JSON check
-fails if any AWS resource change appears.
+credential-shaped value. Provider validation, metadata lookup, account lookup,
+refresh, and all resource creation remain disabled.
 
 The enabled sandbox cost equation is:
 
@@ -142,8 +211,8 @@ This sandbox is intentionally not production-ready. Production requires:
   renewal ownership;
 - ALB access logs and a WAF and rate-control decision;
 - capacity, autoscaling, dashboards, alarms, notification, and SLO decisions;
-- encrypted remote state, GitHub OIDC, approved plan/apply/destroy workflows,
-  and drift controls;
+- operational bootstrap and migration of the represented remote state and OIDC
+  foundation, plus approved plan/apply/destroy workflows and drift controls;
 - a build-once workflow that scans, attests, pushes, and deploys one digest;
 - budget alerts and an operationally tested rollback and recovery path.
 
@@ -153,12 +222,21 @@ sandbox and has a time-bounded Trivy exception.
 
 ## Threat model
 
-| Threat | Current boundary | Residual risk |
+| Threat | Current control | Residual risk |
 | --- | --- | --- |
+| Public state exposure | Full public-access block, ownership enforcement, no public allow | Controls are represented but not deployed |
+| State interception | TLS-only bucket policy | A misconfigured external client could still fail closed |
+| State loss | Versioning and 90-day noncurrent retention | Recovery is not operationally tested |
+| Concurrent writes | Native S3 lockfile | Orphaned locks still require operator judgment |
+| Lock tampering | Exact lockfile object permissions | Trusted state sessions can remove their own lock |
+| State deletion | No `DeleteObject` on the state object | An AWS administrator remains outside this role boundary |
+| OIDC confused deputy | Exact audience and exact subject | Trusted workflow compromise remains possible |
+| Repository rename ambiguity | Verified immutable owner and repository IDs | GitHub configuration drift could invalidate trust |
+| Untrusted PR assumes AWS role | Manual workflow and required protected environment | Environment protection is not yet configured |
+| OIDC token theft | 15-minute smoke session and no token logging | A stolen live token remains usable until expiry |
+| Shared provider deletion | External-provider reference mode | Account administrators own shared-provider availability |
+| Bootstrap state compromise | Human-only bootstrap state boundary | Local state needs careful temporary protection |
+| Workflow permission escalation | Job-level `id-token: write` only | A malicious trusted workflow change needs repository review controls |
 | Direct task compromise | No public task ingress; ALB-to-task SG reference | Public task IP still reaches approved outbound destinations |
-| Role escalation | Empty app role; explicit execution policy | Compromised task can use its execution path through the ECS agent |
-| Supply-chain tampering | Digest-only input, immutable ECR tags, scan-on-push | Image build, attestation, and publish workflow is not implemented |
-| Public API abuse | ALB-only ingress and invalid-header dropping | HTTP lacks TLS; WAF, rate controls, and alarms are deferred |
-| Cost exhaustion | Default-disabled graph, small task, no NAT, bounded logs/images | ALB and public IPv4 accrue charges while enabled |
-| Destructive deployment | No apply or destroy workflow exists | A manual out-of-band apply would bypass intended controls |
-| State loss | No remote state exists and no apply has occurred | Remote-state bootstrap remains a prerequisite |
+| Supply-chain tampering | Digest-only input and immutable ECR tags | Image publication and attestation are not implemented |
+| Destructive deployment | No apply or destroy workflow exists | Manual out-of-band operations could bypass controls |

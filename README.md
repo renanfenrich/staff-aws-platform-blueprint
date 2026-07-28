@@ -3,10 +3,10 @@
 A production-oriented reference blueprint for running a small containerized
 HTTP API on AWS ECS Fargate with Terraform and GitHub Actions.
 
-> **Runtime-foundation status:** Terraform now represents a deployable,
-> disposable sandbox network and ECS Fargate runtime. Resources remain disabled
-> by default, no AWS deployment has occurred, and the repository is not
-> production-ready.
+> **Foundation status:** Terraform represents a deployable, disposable sandbox
+> runtime plus an isolated encrypted remote-state and GitHub OIDC bootstrap.
+> Both roots remain disabled by default, all enabled validation uses mocks, no
+> AWS resource exists, and the repository is not production-ready.
 
 ## What this demonstrates
 
@@ -19,6 +19,11 @@ HTTP API on AWS ECS Fargate with Terraform and GitHub Actions.
 - An explicit `deployment_enabled = false` cost gate and a credential-free plan
   that proves zero AWS resource changes.
 - Mock-provider Terraform tests for the enabled resource graph.
+- A separate `bootstrap_enabled = false` root representing an encrypted,
+  versioned, TLS-only S3 state bucket with native S3 lockfiles.
+- An exact repository-ID and `sandbox` environment-bound GitHub OIDC state role
+  with object-level state and lock permissions.
+- A manual, non-mutating AWS identity and state-bucket control smoke workflow.
 - SHA-pinned CI and security workflows, Dependabot, CodeQL, Gitleaks, Trivy,
   dependency review, container scanning, and SBOM generation.
 
@@ -46,6 +51,8 @@ Terraform stays safe by default:
 ```bash
 make tf-plan
 make tf-test
+make bootstrap-plan-disabled
+make bootstrap-test
 ```
 
 `make tf-plan` uses non-secret, process-local placeholder values required by the
@@ -54,16 +61,25 @@ AWS API request, and fails if the disabled plan contains any resource change.
 `make tf-test` uses Terraform's mock AWS provider to validate the enabled graph.
 Neither command needs AWS credentials.
 
-No supported apply path exists yet. Do not manually set
-`deployment_enabled=true`; first complete the prerequisites in
-[the readiness analysis](docs/production-readiness.md).
+The bootstrap targets also need no AWS credentials. The runtime root has a
+partial S3 backend, but offline commands use `terraform init -backend=false`.
+Future remote initialization requires an explicit untracked configuration:
+
+```bash
+make tf-init-remote BACKEND_CONFIG=infra/terraform/backend.hcl
+```
+
+No supported apply path exists. Do not set `bootstrap_enabled=true` or
+`deployment_enabled=true` outside the approved future procedures in
+[the runbooks](docs/runbooks.md).
 
 ## Repository map
 
 ```text
 src/                 HTTP API
 test/                Unit and integration tests
-infra/terraform/     Cost-gated AWS runtime modules and tests
+infra/bootstrap/     Cost-gated state and GitHub OIDC foundation
+infra/terraform/     Cost-gated AWS runtime modules, backend, and tests
 docs/                Architecture, ADRs, runbooks, and readiness gaps
 .github/workflows/   CI and security checks
 .codex/              Repository-backed AI working context

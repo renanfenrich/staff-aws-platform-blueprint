@@ -1,0 +1,7 @@
+bootstrap_enabled = false
+state_bucket_name = "replace-with-approved-globally-unique-bucket"
+cost_center       = "portfolio"
+owner             = "replace-with-accountable-owner"
+
+# Set only when the account already has the standard GitHub Actions provider.
+# existing_github_oidc_provider_arn = "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com"

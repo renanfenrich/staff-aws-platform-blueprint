@@ -3,30 +3,37 @@
 Build a production-oriented AWS platform blueprint for a small containerized
 API, delivered through Terraform and GitHub Actions.
 
-## Current slice: cost-gated AWS runtime foundation
+## Current slice: remote-state and OIDC foundation
 
-Deliver a deployable Terraform graph for:
+Represent the security prerequisites required before an AWS sandbox plan or
+deployment workflow can exist:
 
-- a two-AZ public sandbox VPC;
-- separate ALB and task security boundaries;
-- an internet-facing HTTP ALB;
-- ECR, ECS Fargate, runtime IAM, and bounded CloudWatch logs;
-- a default-disabled, credential-free zero-resource plan;
-- mock-provider tests of the enabled graph;
-- accurate sandbox and production-gap documentation.
+- an isolated, default-disabled Terraform bootstrap root;
+- an encrypted, versioned, private S3 state bucket with native lockfiles;
+- repository-ID and `sandbox` environment-bound GitHub OIDC;
+- a least-privilege sandbox state role;
+- partial backend configuration for the runtime root;
+- deterministic mock-provider and static security tests;
+- a manual, non-mutating identity smoke workflow;
+- bootstrap, recovery, and state-migration documentation.
 
 ## Scope boundary
 
-This slice does not create AWS resources. OIDC, remote state, apply and destroy
-workflows, image publishing, TLS, DNS, WAF, private production networking,
-budgets, alarms, autoscaling, persistence, and production remain planned work.
+This slice does not create AWS resources, migrate state, create or protect a
+GitHub environment, publish an image, enable the runtime graph, or add plan,
+apply, deployment, promotion, destroy, workload-management, or production
+automation.
 
 ## Completion evidence
 
 - `make validate`
 - `make tf-plan`
 - `make tf-test`
+- `make bootstrap-validate`
+- `make bootstrap-plan-disabled`
+- `make bootstrap-test`
 - `make security`
 - `git diff --check`
-- reviewed diff with no credentials, public task ingress, mutable images, or
-  unpinned automation
+- reviewed diff with no credentials, wildcard trust, broad S3 access,
+  bootstrap-state access from GitHub, public state access, or unpinned
+  automation

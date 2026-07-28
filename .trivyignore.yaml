@@ -14,3 +14,8 @@ misconfigurations:
       - "modules/network/main.tf"
     expired_at: 2026-10-31
     statement: Tasks require TCP 443 to public ECR, Logs, and image-layer endpoints until a reviewed NAT or VPC endpoint design exists.
+  - id: AVD-AWS-0132
+    paths:
+      - "modules/state/main.tf"
+    expired_at: 2026-10-31
+    statement: The encrypted disposable sandbox uses cost-conscious SSE-S3; replace it with a reviewed customer-managed KMS key before production.
