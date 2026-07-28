@@ -5,10 +5,11 @@ HTTP API on AWS ECS Fargate with Terraform and GitHub Actions.
 
 > **Foundation status:** Terraform represents a deployable, disposable sandbox
 > runtime plus an isolated bootstrap that owns remote state, GitHub OIDC, ECR,
-> and a dedicated image-publisher role. A manual build-once publication
-> workflow is represented but blocked on external readiness. Both roots remain
-> disabled by default, enabled validation uses mocks, no AWS resource or image
-> exists, and the repository is not production-ready.
+> and a dedicated image-publisher role. The bootstrap, protected GitHub
+> environment, OIDC smoke, and first immutable image push have been exercised.
+> That image remains unattested after asynchronous ECR Basic scanning blocked
+> the first run. The runtime is disabled and unapplied, and the repository is
+> not production-ready.
 
 ## What this demonstrates
 

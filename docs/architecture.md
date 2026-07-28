@@ -5,10 +5,11 @@
 Terraform represents a disposable sandbox runtime plus a longer-lived state,
 identity, and artifact bootstrap. `deployment_enabled` and `bootstrap_enabled`
 both default to `false`; local plans contain zero AWS resource changes and do
-not authenticate to AWS. Enabled graphs have been validated only with mock AWS
-providers. The manual image-publication path is statically represented but has
-not run. No resource, image, remote state, OIDC session, attestation, or
-deployment has been operationally tested in AWS.
+not authenticate to AWS. The bootstrap has been applied and verified from local
+state, the protected GitHub environment and OIDC smoke are operational, and one
+immutable image has been pushed. The first publication stopped before
+attestation while ECR Basic scanning remained `IN_PROGRESS`. Bootstrap state
+has not been migrated and the runtime has not been initialized or applied.
 
 ## State, identity, and artifact bootstrap
 
@@ -51,7 +52,9 @@ lifecycle rule expires older application subject images after more than 30
 `git-` tags exist. No generic untagged rule exists until OCI 1.1 referrer
 behavior is previewed in the target account. Provenance, SBOMs, and future
 signatures consume storage and quota; attached reference artifacts should
-follow their subject through ECR lifecycle handling.
+follow their subject through ECR lifecycle handling. ECR Basic scanning is
+asynchronous advisory evidence; the pre-authentication Trivy scan is the
+authoritative publication gate.
 
 ## State keys and permissions
 
@@ -88,9 +91,8 @@ Only the manual identity job and manual publication job that enter `sandbox`
 receive `id-token: write`. Each preflight runs without an environment or OIDC
 permission and requires operator readiness before dynamically resolving
 `sandbox`. The publication build job receives neither AWS credentials nor OIDC.
-The GitHub environment did not exist when inspected and is an external
-prerequisite, so this repository does not claim that branch limits or review
-protection exist.
+The `sandbox` environment is restricted to `develop`, has a required reviewer,
+and was exercised by the successful OIDC smoke.
 
 ## Build-once publication path
 
@@ -116,10 +118,10 @@ for one day only, verified after download, loaded, and pushed without a second
 build. Security and publication evidence are retained for 14 days.
 
 The traceability tag is never a deployment identity. The publish job resolves
-it to `ECR_REPOSITORY_URL@sha256:DIGEST`, polls the ECR scan with a bounded
-retry count, creates both attestations against the same subject name and
-digest, verifies their signatures for this source repository, and checks ECR
-referrers. It does not run Terraform or ECS commands.
+it to `ECR_REPOSITORY_URL@sha256:DIGEST`, creates both attestations against the
+same subject name and digest, verifies their signatures for this source
+repository, and checks ECR referrers. It does not wait for asynchronous ECR
+Basic findings or run Terraform or ECS commands.
 
 ## Implemented sandbox architecture
 
@@ -218,8 +220,8 @@ to seven days, and the log group is disposable with the sandbox.
 - The image-publisher role is separate from state and runtime identities. Its
   only wildcard resource is `ecr:GetAuthorizationToken`, which AWS cannot
   resource-scope. Layer upload, manifest publication, image reads, repository
-  inspection, digest resolution, referrer reads, and scan findings are scoped
-  to the exact ECR ARN. It cannot delete images or modify the repository.
+  inspection, digest resolution, and referrer reads are scoped to the exact ECR
+  ARN. It cannot read scan findings, delete images, or modify the repository.
 - The application task role has no policies because the API uses no AWS API.
 - The container runs as UID 1000 with a read-only root filesystem, no
   privileged mode, and all Linux capabilities dropped.
@@ -289,17 +291,18 @@ sandbox and has a time-bounded Trivy exception.
 | State deletion | No `DeleteObject` on the state object | An AWS administrator remains outside this role boundary |
 | OIDC confused deputy | Exact audience and exact subject | Trusted workflow compromise remains possible |
 | Repository rename ambiguity | Verified immutable owner and repository IDs | GitHub configuration drift could invalidate trust |
-| Untrusted PR assumes AWS role | Manual workflow and required protected environment | Environment protection is not yet configured |
+| Untrusted PR assumes AWS role | Manual workflow and protected `develop`-only environment | Trusted reviewer compromise remains possible |
 | OIDC token theft | 15-minute smoke session and no token logging | A stolen live token remains usable until expiry |
 | Shared provider deletion | External-provider reference mode | Account administrators own shared-provider availability |
 | Bootstrap state compromise | Human-only bootstrap state boundary | Local state needs careful temporary protection |
 | Workflow permission escalation | Job-level `id-token: write` only | A malicious trusted workflow change needs repository review controls |
 | Direct task compromise | No public task ingress; ALB-to-task SG reference | Public task IP still reaches approved outbound destinations |
-| First-deployment circular dependency | Registry lifecycle separated from runtime | Bootstrap has not been applied |
-| Malicious pull request publishes image | Manual dispatch, protected environment, and exact OIDC subject | Environment protection is not configured |
-| Mutable image substitution | Immutable tags and digest-only runtime reference | ECR behavior is not operationally observed |
+| First-deployment circular dependency | Registry lifecycle separated from runtime | Runtime publication and plan remain manual |
+| Malicious pull request publishes image | Manual dispatch, protected environment, and exact OIDC subject | Trusted reviewers can still approve harmful code |
+| Mutable image substitution | Immutable tags and digest-only runtime reference | Promotion has not been operationally tested |
 | Different image scanned and pushed | One build and archive SHA-256 verification | Hosted-runner compromise remains possible |
 | Vulnerable image publication | Trivy gate before AWS authentication | Scanner coverage and vulnerability data can be incomplete |
+| Delayed registry findings | ECR scan on push retained as asynchronous advisory evidence | No automated post-publication response exists |
 | Incomplete dependency evidence | SPDX SBOM from the exact image | SBOM accuracy depends on scanner detection |
 | Forged provenance | GitHub signed digest-bound attestation | Trusted workflow compromise can attest malicious output |
 | SBOM and image mismatch | Same subject digest for provenance and SBOM | Attestation has not been operationally verified |

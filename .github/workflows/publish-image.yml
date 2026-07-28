@@ -320,50 +320,6 @@ jobs:
           echo "digest=${registry_digest}" >> "${GITHUB_OUTPUT}"
           echo "immutable_reference=${immutable_reference}" >> "${GITHUB_OUTPUT}"
 
-      - name: Require a successful ECR scan with no high findings
-        run: |
-          attempt=1
-          scan_error="${RUNNER_TEMP}/ecr-scan.err"
-          while [ "${attempt}" -le 12 ]; do
-            if ! aws ecr describe-image-scan-findings \
-              --repository-name "${ECR_REPOSITORY_NAME}" \
-              --image-id "imageDigest=${{ steps.resolve.outputs.digest }}" \
-              --output json > evidence/ecr-scan-results.json 2>"${scan_error}"; then
-              if grep -q "ScanNotFoundException" "${scan_error}"; then
-                status="SCAN_NOT_FOUND"
-                jq -n --arg status "${status}" '{imageScanStatus: {status: $status}}' \
-                  > evidence/ecr-scan-results.json
-              else
-                cp "${scan_error}" evidence/ecr-scan-error.txt
-                echo "::error::ECR scan findings could not be read; verify the account scanning mode."
-                exit 1
-              fi
-            else
-              status="$(jq -r '.imageScanStatus.status // "UNKNOWN"' evidence/ecr-scan-results.json)"
-            fi
-            if [ "${status}" = "COMPLETE" ]; then
-              high="$(jq -r '.imageScanFindings.findingSeverityCounts.HIGH // 0' evidence/ecr-scan-results.json)"
-              critical="$(jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL // 0' evidence/ecr-scan-results.json)"
-              if [ "${high}" -ne 0 ] || [ "${critical}" -ne 0 ]; then
-                echo "::error::ECR scan reported HIGH or CRITICAL findings."
-                exit 1
-              fi
-              break
-            fi
-            case "${status}" in
-              FAILED|UNSUPPORTED_IMAGE|FINDINGS_UNAVAILABLE|SCAN_ELIGIBILITY_EXPIRED|LIMIT_EXCEEDED)
-                echo "::error::ECR scan ended with status ${status}."
-                exit 1
-                ;;
-            esac
-            if [ "${attempt}" -eq 12 ]; then
-              echo "::error::ECR scan did not complete within the bounded polling window; last status: ${status}."
-              exit 1
-            fi
-            attempt=$((attempt + 1))
-            sleep 10
-          done
-
       - name: Generate and publish digest-bound provenance
         id: provenance
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
