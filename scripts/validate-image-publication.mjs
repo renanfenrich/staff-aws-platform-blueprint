@@ -80,7 +80,7 @@ assert.match(publish, /docker load --input transfer\/image\.tar/);
 const credentialIndex = publish.indexOf("aws-actions/configure-aws-credentials@");
 assert(credentialIndex > 0);
 for (const requiredBeforeAuth of [
-  "sha256sum --check image-archive.sha256",
+  "sha256sum --check transfer/image-archive.sha256",
   "expected_sbom_sha256",
   "docker load --input transfer/image.tar",
 ]) {
