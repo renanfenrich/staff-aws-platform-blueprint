@@ -18,10 +18,7 @@ assert.match(
   smoke,
   /environment_name: \$\{\{ steps\.readiness\.outputs\.environment_name \}\}/,
 );
-assert.match(
-  smoke,
-  /name: \$\{\{ needs\.preflight\.outputs\.environment_name \}\}/,
-);
+assert.match(smoke, /name: \$\{\{ needs\.preflight\.outputs\.environment_name \}\}/);
 assert.match(smoke, /^\s+deployment: false$/m);
 assert.doesNotMatch(smoke, /^\s+environment: sandbox$/m);
 assert.equal(
