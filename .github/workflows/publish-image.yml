@@ -192,10 +192,17 @@ jobs:
             echo "::error::AWS_IMAGE_PUBLISH_ROLE_ARN does not match the expected account and role."
             exit 1
           fi
+          docker_config="${RUNNER_TEMP}/staff-image-docker-config"
+          attest_home="${RUNNER_TEMP}/staff-image-attest-home"
+          mkdir -p "${docker_config}"
+          echo "DOCKER_CONFIG=${docker_config}" >> "${GITHUB_ENV}"
           docker load --input transfer/image.tar
           docker image inspect "${LOCAL_IMAGE}" >/dev/null
-          echo "account_id=${account_id}" >> "${GITHUB_OUTPUT}"
-          echo "registry=${ECR_REPOSITORY_URL%%/*}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "account_id=${account_id}"
+            echo "attest_home=${attest_home}"
+            echo "registry=${ECR_REPOSITORY_URL%%/*}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Configure 15-minute AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
@@ -237,14 +244,17 @@ jobs:
              .[0].encryptionConfiguration.encryptionType == "AES256"' \
             <<< "${repository}" >/dev/null
 
-      - name: Reserve the default Docker configuration for ECR authentication
-        run: test ! -e "${HOME}/.docker/config.json"
-
       - name: Authenticate only to the configured ECR registry
         uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
         with:
           registries: ${{ steps.configuration.outputs.account_id }}
           mask-password: true
+
+      - name: Isolate ECR credentials for attestation
+        run: |
+          test -f "${DOCKER_CONFIG}/config.json"
+          install -D -m 600 "${DOCKER_CONFIG}/config.json" \
+            "${{ steps.configuration.outputs.attest_home }}/.docker/config.json"
 
       - name: Push the already-built image once
         id: push
@@ -322,6 +332,8 @@ jobs:
 
       - name: Generate and publish digest-bound provenance
         id: provenance
+        env:
+          HOME: ${{ steps.configuration.outputs.attest_home }}
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-name: ${{ vars.ECR_REPOSITORY_URL }}
@@ -331,6 +343,8 @@ jobs:
 
       - name: Generate and publish the digest-bound SBOM attestation
         id: sbom_attestation
+        env:
+          HOME: ${{ steps.configuration.outputs.attest_home }}
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-name: ${{ vars.ECR_REPOSITORY_URL }}
@@ -402,4 +416,5 @@ jobs:
         if: always()
         run: |
           docker logout "${{ steps.configuration.outputs.registry }}" >/dev/null 2>&1 || true
-          rm -f "${HOME}/.docker/config.json"
+          rm -f "${RUNNER_TEMP}/staff-image-docker-config/config.json"
+          rm -f "${RUNNER_TEMP}/staff-image-attest-home/.docker/config.json"

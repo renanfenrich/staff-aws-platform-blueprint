@@ -120,16 +120,30 @@ assert.doesNotMatch(
 );
 
 const ecrLoginIndex = publish.indexOf("aws-actions/amazon-ecr-login@");
-const dockerConfigGuardIndex = publish.indexOf(
-  "Reserve the default Docker configuration for ECR authentication",
+const attestCredentialIndex = publish.indexOf(
+  "Isolate ECR credentials for attestation",
 );
 const firstAttestationIndex = publish.indexOf("uses: actions/attest@");
 assert(ecrLoginIndex > 0);
-assert(dockerConfigGuardIndex > 0 && dockerConfigGuardIndex < ecrLoginIndex);
-assert(firstAttestationIndex > ecrLoginIndex);
-assert.match(publish, /test ! -e "\$\{HOME\}\/.docker\/config\.json"/);
-assert.match(publish, /rm -f "\$\{HOME\}\/.docker\/config\.json"/);
-assert.doesNotMatch(publish, /DOCKER_CONFIG|install -D -m 600/);
+assert(attestCredentialIndex > ecrLoginIndex);
+assert(firstAttestationIndex > attestCredentialIndex);
+assert.match(publish, /DOCKER_CONFIG=\$\{docker_config\}/);
+assert.match(publish, /attest_home=\$\{attest_home\}/);
+assert.match(publish, /install -D -m 600 "\$\{DOCKER_CONFIG\}\/config\.json"/);
+assert.equal(
+  [...publish.matchAll(/HOME: \$\{\{ steps\.configuration\.outputs\.attest_home \}\}/g)]
+    .length,
+  2,
+);
+assert.match(
+  publish,
+  /rm -f "\$\{RUNNER_TEMP\}\/staff-image-docker-config\/config\.json"/,
+);
+assert.match(
+  publish,
+  /rm -f "\$\{RUNNER_TEMP\}\/staff-image-attest-home\/.docker\/config\.json"/,
+);
+assert.doesNotMatch(publish, /rm -f "\$\{HOME\}\/.docker\/config\.json"/);
 
 const attestUses = [
   ...publish.matchAll(/uses: actions\/attest@[0-9a-f]{40} # v4\.2\.0/g),
