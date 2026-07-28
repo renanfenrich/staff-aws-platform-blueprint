@@ -5,11 +5,12 @@
 The repository contains a deployable Terraform runtime graph, a separate
 remote-state, OIDC, ECR, and image-publisher bootstrap, and a manual build-once
 publication workflow. The bootstrap, protected GitHub environment, lifecycle
-preview, OIDC smoke, pre-authentication Trivy gate, and first immutable push
-have been exercised. The pushed image remains unattested because ECR Basic
-scanning blocked that run while `IN_PROGRESS`. Bootstrap state migration,
-runtime initialization and apply, deployment, rollback, destroy, and cost
-review have not occurred. This is not a production-ready platform.
+preview, OIDC smoke, pre-authentication Trivy gate, and two immutable pushes
+have been exercised. Both pushed images remain unattested: the first waited on
+ECR Basic scanning while `IN_PROGRESS`, and the later run exposed an attestation
+registry credential compatibility gap. Bootstrap state migration, runtime
+initialization and apply, deployment, rollback, destroy, and cost review have
+not occurred. This is not a production-ready platform.
 
 ## Implemented and locally validated
 
@@ -84,6 +85,9 @@ promotion, or destroy automation.
   Secrets Manager integration, and persistence are absent.
 - ECR Basic scan on push remained `IN_PROGRESS` beyond the first publication
   window; no automated post-publication response to later findings exists.
+- The later attestation step could not read the temporary ECR Docker
+  configuration; the reviewed workflow handoff has not yet been proven in a
+  hosted run.
 - Repository immutability and the post-push failure path were observed, but OCI
   referrers, provenance, SBOM attestation, and cryptographic verification remain
   unproven.

@@ -2,11 +2,12 @@
 
 These runbooks describe controlled workflows. The AWS bootstrap, protected
 GitHub environment, lifecycle preview, and OIDC smoke have been exercised, but
-bootstrap state has not been migrated. The first image-publication run pushed
-one immutable digest and stopped before attestation while ECR Basic scanning
-remained `IN_PROGRESS`. The repository has no plan, apply, deployment,
-promotion, recovery, or destroy workflow. Do not substitute ad hoc Terraform or
-console changes.
+bootstrap state has not been migrated. Two image-publication runs pushed
+immutable digests but stopped before attestation: the first waited on ECR Basic
+scanning and the later run exposed an attestation registry credential
+compatibility gap. The repository has no plan, apply, deployment, promotion,
+recovery, or destroy workflow. Do not substitute ad hoc Terraform or console
+changes.
 
 ## External GitHub sandbox prerequisites
 
@@ -166,12 +167,15 @@ variables are independently verified.
 12. Treat ECR Basic scan on push as asynchronous advisory evidence; publication
     does not poll it. Review later findings before any deployment or promotion,
     and stop selection of the digest if they contradict the accepted Trivy gate.
-13. Verify provenance and SPDX SBOM attestations cryptographically for
+13. Confirm the workflow verifies the temporary ECR Docker configuration's
+    exact registry entry, exposes it only to `actions/attest`, and removes both
+    temporary and default-path configuration files in its `always()` cleanup.
+14. Verify provenance and SPDX SBOM attestations cryptographically for
     `renanfenrich/staff-aws-platform-blueprint` and confirm both subject digests
     equal the published image digest.
-14. Confirm at least two active OCI referrers are visible and preserve the
+15. Confirm at least two active OCI referrers are visible and preserve the
     14-day evidence artifacts.
-15. Provide the reviewed immutable reference explicitly to a future Terraform
+16. Provide the reviewed immutable reference explicitly to a future Terraform
     plan. Do not commit it automatically and do not update ECS in this procedure.
 
 ### Publication recovery
@@ -191,6 +195,10 @@ variables are independently verified.
   dispatch.
 - **Digest resolution failure:** preserve the push output and evidence, inspect
   the exact trace tag with a human operator, and do not guess a digest.
+- **Attestation registry authentication failure:** preserve the pushed digest
+  and evidence, confirm the verified credential handoff and cleanup steps, and
+  fix the workflow through review; do not expose or persist registry credentials
+  or recover the existing digest in this workflow.
 - **Later ECR findings contradict Trivy:** stop deployment selection, preserve
   both reports, investigate database and coverage differences, and publish a
   remediated image through a new reviewed run.
