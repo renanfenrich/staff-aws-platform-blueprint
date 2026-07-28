@@ -1,0 +1,69 @@
+name: AWS OIDC smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    name: Verify sandbox readiness attestation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require reviewed repository settings
+        env:
+          AWS_OIDC_SANDBOX_READY: ${{ vars.AWS_OIDC_SANDBOX_READY }}
+        run: |
+          if [ "${AWS_OIDC_SANDBOX_READY}" != "true" ]; then
+            echo "::error::Set repository variable AWS_OIDC_SANDBOX_READY=true only after sandbox environment protection and AWS bootstrap are verified."
+            exit 1
+          fi
+
+  identity:
+    name: Verify short-lived AWS identity
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: sandbox
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Validate non-secret environment variables
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_STATE_ROLE_ARN: ${{ vars.AWS_STATE_ROLE_ARN }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          if [ -z "${AWS_REGION}" ]; then
+            echo "::error::Required sandbox environment variable AWS_REGION is not configured."
+            exit 1
+          fi
+          if [ -z "${AWS_STATE_ROLE_ARN}" ]; then
+            echo "::error::Required sandbox environment variable AWS_STATE_ROLE_ARN is not configured."
+            exit 1
+          fi
+          if [ -z "${TF_STATE_BUCKET}" ]; then
+            echo "::error::Required sandbox environment variable TF_STATE_BUCKET is not configured."
+            exit 1
+          fi
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          audience: sts.amazonaws.com
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_STATE_ROLE_ARN }}
+          role-duration-seconds: 900
+          role-session-name: staff-state-${{ github.run_id }}
+          role-skip-session-tagging: true
+
+      - name: Verify identity and state-bucket controls
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          aws sts get-caller-identity --query '{Account:Account,Arn:Arn}' --output json
+          aws s3api get-bucket-versioning --bucket "${TF_STATE_BUCKET}"
+          aws s3api get-bucket-encryption --bucket "${TF_STATE_BUCKET}"
+          aws s3api get-public-access-block --bucket "${TF_STATE_BUCKET}"

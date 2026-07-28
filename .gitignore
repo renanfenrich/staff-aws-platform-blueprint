@@ -9,6 +9,11 @@ coverage/
 *.tfstate
 *.tfstate.*
 *.tfplan
+*.tfbackend
+backend.hcl
+terraform.tfvars
+*.auto.tfvars
+.terraform.tfstate.lock.info
 crash.log
 
 .DS_Store

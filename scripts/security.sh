@@ -9,6 +9,7 @@ trivy_cache="${TMPDIR:-/tmp}/staff-aws-platform-blueprint-trivy-cache"
 mkdir -p "${trivy_cache}"
 
 npm audit --audit-level=high
+node "${repository_root}/scripts/validate-aws-foundation.mjs"
 
 docker run --rm \
   --volume "${repository_root}:/repo" \
@@ -29,6 +30,15 @@ docker run --rm \
     --ignorefile /repo/.trivyignore.yaml \
     --tf-vars /repo/infra/terraform/tests/security.tfvars \
     /repo/infra/terraform
+
+docker run --rm \
+  --volume "${trivy_cache}:/root/.cache/trivy" \
+  --volume "${repository_root}:/repo" \
+  "${trivy_image}" \
+  config --severity HIGH,CRITICAL --exit-code 1 \
+    --ignorefile /repo/.trivyignore.yaml \
+    --tf-vars /repo/infra/bootstrap/tests/security.tfvars \
+    /repo/infra/bootstrap
 
 docker run --rm \
   --volume "${trivy_cache}:/root/.cache/trivy" \

@@ -12,7 +12,7 @@ maintenance or end of life.
 
 - npm dependencies use exact versions and a committed lockfile.
 - Terraform CLI and providers use exact constraints and a committed provider
-  lockfile.
+  lockfile for each independent root.
 - Container bases use immutable digests and never `latest`.
 - GitHub Actions use full commit SHAs with readable release comments.
 - Dependabot opens weekly updates against `develop` for npm, Docker, Terraform,

@@ -1,0 +1,3 @@
+bucket = "replace-with-approved-globally-unique-bucket"
+key    = "staff-aws-platform-blueprint/sandbox/terraform.tfstate"
+region = "us-east-1"

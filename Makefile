@@ -1,9 +1,12 @@
 SHELL := /bin/sh
 TF_DIR := infra/terraform
+BOOTSTRAP_DIR := infra/bootstrap
 IMAGE := staff-aws-platform-blueprint-api:local
 
 .PHONY: help setup run lint typecheck test security container docs-check workflow-lint \
-	tf-init tf-format tf-format-check tf-validate tf-plan tf-test validate
+	aws-foundation-check bootstrap-init bootstrap-format-check bootstrap-validate \
+	bootstrap-plan-disabled bootstrap-test tf-init tf-init-local tf-init-remote \
+	tf-format tf-format-check tf-validate tf-plan tf-test validate
 
 help:
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "%-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -38,8 +41,36 @@ workflow-lint: ## Validate GitHub Actions workflow syntax
 	docker run --rm --volume "$(CURDIR):/repo" --workdir /repo \
 		rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
-tf-init: ## Initialize Terraform without a remote backend
-	terraform -chdir=$(TF_DIR) init -backend=false -input=false
+aws-foundation-check: ## Statically validate the backend, OIDC trust, and smoke workflow
+	node scripts/validate-aws-foundation.mjs
+
+bootstrap-init: ## Initialize the bootstrap root with local state
+	terraform -chdir=$(BOOTSTRAP_DIR) init -backend=false -input=false
+
+bootstrap-format-check: ## Check bootstrap Terraform formatting
+	terraform fmt -check -recursive $(BOOTSTRAP_DIR)
+
+bootstrap-validate: bootstrap-init ## Validate the credential-free bootstrap root
+	terraform -chdir=$(BOOTSTRAP_DIR) validate
+
+bootstrap-plan-disabled: bootstrap-init ## Prove the disabled bootstrap plan has zero changes
+	./scripts/bootstrap-plan.sh
+
+bootstrap-test: bootstrap-init ## Test the enabled bootstrap graph with a mock AWS provider
+	terraform -chdir=$(BOOTSTRAP_DIR) test
+
+tf-init: tf-init-local ## Initialize Terraform without a remote backend
+
+tf-init-local: ## Initialize runtime Terraform without a remote backend
+	terraform -chdir=$(TF_DIR) init -backend=false -input=false -reconfigure
+
+tf-init-remote: ## Initialize runtime Terraform with an explicit partial backend config
+	@test -n "$(BACKEND_CONFIG)" || \
+		{ echo "BACKEND_CONFIG must name an explicit backend configuration file." >&2; exit 1; }
+	@test -f "$(BACKEND_CONFIG)" || \
+		{ echo "Backend configuration file not found: $(BACKEND_CONFIG)" >&2; exit 1; }
+	terraform -chdir=$(TF_DIR) init -input=false -reconfigure \
+		-backend-config="$(abspath $(BACKEND_CONFIG))"
 
 tf-format: ## Format Terraform files
 	terraform fmt -recursive $(TF_DIR)
@@ -47,13 +78,15 @@ tf-format: ## Format Terraform files
 tf-format-check: ## Check Terraform formatting
 	terraform fmt -check -recursive $(TF_DIR)
 
-tf-validate: tf-init ## Validate Terraform configuration
+tf-validate: tf-init-local ## Validate Terraform configuration
 	terraform -chdir=$(TF_DIR) validate
 
-tf-plan: tf-init ## Prove the disabled plan contains zero AWS resource changes
+tf-plan: ## Prove the disabled plan contains zero AWS resource changes
 	./scripts/tf-plan.sh
 
-tf-test: tf-init ## Test the enabled runtime graph with a mock AWS provider
+tf-test: tf-init-local ## Test the enabled runtime graph with a mock AWS provider
 	terraform -chdir=$(TF_DIR) test
 
-validate: lint typecheck test docs-check workflow-lint tf-format-check tf-validate tf-plan tf-test ## Run the local quality gate
+validate: lint typecheck test docs-check workflow-lint aws-foundation-check \
+	tf-format-check tf-validate tf-plan tf-test bootstrap-format-check \
+	bootstrap-validate bootstrap-plan-disabled bootstrap-test ## Run the local quality gate
