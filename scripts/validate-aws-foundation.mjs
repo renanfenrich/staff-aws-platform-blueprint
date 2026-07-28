@@ -14,7 +14,16 @@ const smoke = workflows["aws-oidc-smoke.yml"];
 assert(smoke, "AWS OIDC smoke workflow is missing.");
 assert.match(smoke, /^on:\n {2}workflow_dispatch:\s*$/m);
 assert.doesNotMatch(smoke, /^\s+(push|pull_request|pull_request_target):/m);
-assert.match(smoke, /^\s+environment: sandbox$/m);
+assert.match(
+  smoke,
+  /environment_name: \$\{\{ steps\.readiness\.outputs\.environment_name \}\}/,
+);
+assert.match(
+  smoke,
+  /name: \$\{\{ needs\.preflight\.outputs\.environment_name \}\}/,
+);
+assert.match(smoke, /^\s+deployment: false$/m);
+assert.doesNotMatch(smoke, /^\s+environment: sandbox$/m);
 assert.equal(
   [...smoke.matchAll(/^\s+id-token: write$/gm)].length,
   1,
@@ -28,6 +37,7 @@ assert.match(smoke, /role-duration-seconds: 900/);
 assert.match(smoke, /audience: sts\.amazonaws\.com/);
 assert.match(smoke, /role-session-name: staff-state-\$\{\{ github\.run_id \}\}/);
 assert.match(smoke, /AWS_OIDC_SANDBOX_READY/);
+assert.match(smoke, /echo "environment_name=sandbox" >> "\$\{GITHUB_OUTPUT\}"/);
 assert.doesNotMatch(smoke, /secrets\.(AWS|TF_STATE)/);
 assert.doesNotMatch(smoke, /AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)/);
 
