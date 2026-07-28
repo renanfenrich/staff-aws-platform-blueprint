@@ -10,22 +10,28 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+    outputs:
+      environment_name: ${{ steps.readiness.outputs.environment_name }}
     steps:
       - name: Require reviewed repository settings
+        id: readiness
         env:
           AWS_OIDC_SANDBOX_READY: ${{ vars.AWS_OIDC_SANDBOX_READY }}
         run: |
           if [ "${AWS_OIDC_SANDBOX_READY}" != "true" ]; then
-            echo "::error::Set repository variable AWS_OIDC_SANDBOX_READY=true only after sandbox environment protection and AWS bootstrap are verified."
+            echo "::error::Create and protect the sandbox environment before setting AWS_OIDC_SANDBOX_READY=true or dispatching this workflow."
             exit 1
           fi
+          echo "environment_name=sandbox" >> "${GITHUB_OUTPUT}"
 
   identity:
     name: Verify short-lived AWS identity
     needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: sandbox
+    environment:
+      name: ${{ needs.preflight.outputs.environment_name }}
+      deployment: false
     permissions:
       contents: read
       id-token: write
