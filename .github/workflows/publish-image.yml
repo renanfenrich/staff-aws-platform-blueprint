@@ -169,10 +169,7 @@ jobs:
           test -f transfer/image-archive.sha256
           test -f evidence/sbom.spdx.json
           test -f evidence/image-build-metadata.json
-          (
-            cd transfer
-            sha256sum --check image-archive.sha256
-          )
+          sha256sum --check transfer/image-archive.sha256
           expected_sbom_sha256="$(jq -r '.sbom_sha256' evidence/image-build-metadata.json)"
           actual_sbom_sha256="$(sha256sum evidence/sbom.spdx.json | cut -d ' ' -f 1)"
           test "${expected_sbom_sha256}" = "${actual_sbom_sha256}"
