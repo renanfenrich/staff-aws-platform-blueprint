@@ -121,11 +121,11 @@ build. Security and publication evidence are retained for 14 days.
 The traceability tag is never a deployment identity. The publish job resolves
 it to `ECR_REPOSITORY_URL@sha256:DIGEST`, creates both attestations against the
 same subject name and digest, verifies their signatures for this source
-repository, and checks ECR referrers. ECR login writes only a run-temporary
-Docker configuration; the workflow verifies its exact registry entry, copies it
-mode `0600` to the runner's default Docker path only for `actions/attest`, and
-removes both files in an `always()` cleanup. It does not wait for asynchronous
-ECR Basic findings or run Terraform or ECS commands.
+repository, and checks ECR referrers. The workflow reserves an absent default
+Docker configuration path, so ECR login and `actions/attest` use the same
+standard registry credential source; its `always()` cleanup logs out and
+removes that file. It does not wait for asynchronous ECR Basic findings or run
+Terraform or ECS commands.
 
 ## Implemented sandbox architecture
 

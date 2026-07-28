@@ -38,9 +38,9 @@
 - Artifact contract: manual publication builds exactly once for Linux X86_64,
   uses pinned Trivy as the authoritative pre-authentication OS and library gate,
   creates an SPDX SBOM, transfers a checksummed archive, and defines digest-bound
-  provenance and SBOM attestations. ECR login is run-temporary and handed to
-  `actions/attest` through a verified mode-0600 default Docker config that is
-  always removed. ECR Basic scanning is asynchronous advisory evidence.
+  provenance and SBOM attestations. ECR login and `actions/attest` share the
+  guarded default Docker configuration, which is always removed. ECR Basic
+  scanning is asynchronous advisory evidence.
 - Runtime image contract: the 26-resource enabled graph consumes an explicit
   external repository ARN and URL plus that exact URL at a `sha256` digest.
 - Provisioning: Terraform only; no ad hoc console changes.

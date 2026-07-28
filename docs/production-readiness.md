@@ -85,9 +85,8 @@ promotion, or destroy automation.
   Secrets Manager integration, and persistence are absent.
 - ECR Basic scan on push remained `IN_PROGRESS` beyond the first publication
   window; no automated post-publication response to later findings exists.
-- The later attestation step could not read the temporary ECR Docker
-  configuration; the reviewed workflow handoff has not yet been proven in a
-  hosted run.
+- The reviewed standard ECR-login and default Docker-configuration path has not
+  yet been proven in a hosted attestation run.
 - Repository immutability and the post-push failure path were observed, but OCI
   referrers, provenance, SBOM attestation, and cryptographic verification remain
   unproven.
