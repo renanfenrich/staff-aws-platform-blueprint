@@ -19,5 +19,6 @@ output "test_contract" {
     application_trust_policy = aws_iam_role.application.assume_role_policy
     execution_trust_policy   = aws_iam_role.execution.assume_role_policy
     mandatory_tags           = aws_iam_role.execution.tags
+    resource_count           = 3
   }
 }

@@ -38,12 +38,12 @@ assert.match(smoke, /echo "environment_name=sandbox" >> "\$\{GITHUB_OUTPUT\}"/);
 assert.doesNotMatch(smoke, /secrets\.(AWS|TF_STATE)/);
 assert.doesNotMatch(smoke, /AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)/);
 
-const nonSmokeWorkflows = Object.entries(workflows)
-  .filter(([name]) => name !== "aws-oidc-smoke.yml")
+const nonAwsWorkflows = Object.entries(workflows)
+  .filter(([name]) => name !== "aws-oidc-smoke.yml" && name !== "publish-image.yml")
   .map(([, contents]) => contents)
   .join("\n");
 assert.equal(
-  [...nonSmokeWorkflows.matchAll(/^\s+id-token: write$/gm)].length,
+  [...nonAwsWorkflows.matchAll(/^\s+id-token: write$/gm)].length,
   1,
   "Existing workflows must retain only the push-only provenance OIDC permission.",
 );
@@ -53,11 +53,15 @@ assert.match(
   /provenance:[\s\S]+?if: github\.event_name == 'push'[\s\S]+?id-token: write/,
 );
 for (const [name, contents] of Object.entries(workflows)) {
-  if (name !== "aws-oidc-smoke.yml" && name !== "ci.yml") {
+  if (
+    name !== "aws-oidc-smoke.yml" &&
+    name !== "publish-image.yml" &&
+    name !== "ci.yml"
+  ) {
     assert.doesNotMatch(contents, /^\s+id-token: write$/m);
   }
 }
-assert.doesNotMatch(nonSmokeWorkflows, /secrets\.AWS/);
+assert.doesNotMatch(nonAwsWorkflows, /secrets\.AWS/);
 
 const runtimeBackend = read("infra/terraform/backend.tf");
 assert.match(runtimeBackend, /backend "s3"/);

@@ -21,6 +21,7 @@ output "test_contract" {
     github_oidc_url          = local.github_oidc_url
     lock_key                 = local.lock_key
     maximum_session_duration = aws_iam_role.state.max_session_duration
+    resource_count           = 2 + length(aws_iam_openid_connect_provider.github)
     state_key                = var.state_key
     state_policy             = local.state_policy
     thumbprints_configured   = false

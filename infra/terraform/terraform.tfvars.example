@@ -5,4 +5,6 @@ owner       = "platform-team"
 deployment_enabled = false
 
 # Required only after a reviewed image workflow publishes an immutable artifact.
+# ecr_repository_arn = "arn:aws:ecr:REGION:ACCOUNT:repository/REPOSITORY"
+# ecr_repository_url = "ACCOUNT.dkr.ecr.REGION.amazonaws.com/REPOSITORY"
 # container_image = "ACCOUNT.dkr.ecr.REGION.amazonaws.com/REPOSITORY@sha256:..."

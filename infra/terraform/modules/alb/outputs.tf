@@ -10,5 +10,6 @@ output "test_contract" {
   value = {
     health_check_path = aws_lb_target_group.application.health_check[0].path
     mandatory_tags    = aws_lb.this.tags
+    resource_count    = 3
   }
 }

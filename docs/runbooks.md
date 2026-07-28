@@ -1,10 +1,10 @@
 # Operational runbooks
 
 These runbooks describe controlled future workflows. Terraform represents AWS
-OIDC and remote-state infrastructure, but none exists and no state has been
-migrated. The repository has no image publication, plan, apply, deployment,
-promotion, or destroy workflow. Do not substitute ad hoc Terraform or console
-changes.
+OIDC, remote state, ECR, and publisher infrastructure, but none exists and no
+state has been migrated. A manual image-publication workflow is defined but has
+not run. The repository has no plan, apply, deployment, promotion, recovery, or
+destroy workflow. Do not substitute ad hoc Terraform or console changes.
 
 ## External GitHub sandbox prerequisites
 
@@ -13,12 +13,18 @@ Before any OIDC run, a repository administrator must:
 1. Create an environment named exactly `sandbox`.
 2. Limit deployment branches to `develop`.
 3. Add a required reviewer where the repository plan supports it.
-4. Store `AWS_STATE_ROLE_ARN`, `AWS_REGION`, and `TF_STATE_BUCKET` as
+4. Store `AWS_STATE_ROLE_ARN`, `AWS_IMAGE_PUBLISH_ROLE_ARN`, `AWS_REGION`,
+   `TF_STATE_BUCKET`, `ECR_REPOSITORY_NAME`, and `ECR_REPOSITORY_URL` as
    non-secret environment variables.
-5. Store no AWS access keys in repository, environment, organization, or action
+5. Confirm the role ARN, repository name, repository URL, account, and region
+   all identify the reviewed bootstrap outputs.
+6. Store no AWS access keys in repository, environment, organization, or action
    secrets.
-6. Set repository variable `AWS_OIDC_SANDBOX_READY=true` only after the AWS
+7. Set repository variable `AWS_OIDC_SANDBOX_READY=true` only after the AWS
    bootstrap and all environment controls are independently verified.
+8. Set repository variable `AWS_IMAGE_PUBLISH_READY=true` only after ECR,
+   publisher trust and permissions, lifecycle preview, environment restrictions,
+   non-secret variables, and the successful OIDC smoke are verified.
 
 The environment endpoint returned 404 on 2026-07-27. Referencing `sandbox` in a
 workflow is not evidence that these controls exist. Pull requests must never
@@ -38,15 +44,22 @@ account approval, reviewed cost, and explicit apply and migration approvals.
 3. Copy `infra/bootstrap/terraform.tfvars.example` to an untracked local file,
    select a reviewed globally unique bucket, and set `bootstrap_enabled=true`.
 4. Run `make bootstrap-init`, create a saved bootstrap plan with refresh
-   enabled, and review all ten resources, account, region, tags, policies,
-   bucket name, and any existing-provider choice.
+   enabled, and review all 14 resources, account, region, tags, policies,
+   bucket and repository names, and any existing-provider choice. Expect 13
+   resources when referencing the existing account-level provider.
 5. Obtain explicit bootstrap apply approval and apply only that saved plan.
 6. Verify bucket ownership, public-access block, versioning, AES-256 default
    encryption, TLS deny, lifecycle, and accidental-destroy protection.
-7. Verify the provider URL and audience, exact trust `aud` and `sub`, one-hour
-   role maximum, and state-role permission matrix. If the provider already
-   exists, supply its ARN and confirm Terraform creates and manages no provider.
-8. Configure the protected GitHub environment prerequisites above, then run
+7. Verify ECR immutable tags, scan on push, SSE-S3, `force_delete=false`,
+   mandatory tags, `prevent_destroy`, no public or cross-account policy, and the
+   `git-` lifecycle rule. Preview the lifecycle and confirm it affects only
+   subject images beyond 30; do not accept generic untagged cleanup.
+8. Verify the provider URL and audience, exact trust `aud` and `sub`, one-hour
+   role maximum, state-role permissions, and the separate publisher permission
+   matrix. Confirm the state role gained no ECR action and the publisher gained
+   no state, delete, repository-management, or workload action. If the provider
+   already exists, supply its ARN and confirm Terraform manages no provider.
+9. Configure the protected GitHub environment prerequisites above, then run
    `.github/workflows/aws-oidc-smoke.yml` manually. Record identity and bucket
    control evidence without recording tokens or credentials.
 
@@ -108,12 +121,92 @@ object without proving that no Terraform process owns it.
 5. Confirm `make bootstrap-test` passes all mock-provider security assertions.
 6. Run `make security` and review any time-bounded exception in
    `.trivyignore.yaml`.
-7. Run `git diff --check`.
-8. Inspect the full Terraform diff for public state, missing encryption or
-   versioning, wildcard trust, broad S3 actions, bootstrap-state access,
-   credential patterns, generated plans or state, and unsafe defaults.
+7. Run `make image-build`, `make image-scan`, `make image-sbom`, and
+   `make image-publication-check`. Confirm the local targets neither authenticate
+   nor push.
+8. Run `git diff --check`.
+9. Inspect the full diff for runtime-owned ECR, public state, missing
+   encryption, wildcard trust, broad publisher or state actions, image deletion,
+   repository mutation, mutable tags, a second publication build, pre-scan AWS
+   authentication, credentials, generated plans or state, and unsafe defaults.
 
 These steps use no AWS credentials and create no AWS resources.
+
+## Future manual image publication
+
+Do not dispatch until the human bootstrap, lifecycle preview, publisher review,
+environment protection, non-secret variables, OIDC smoke, and both readiness
+variables are independently verified.
+
+1. Confirm the selected commit is on `refs/heads/develop`; do not dispatch from
+   `main`, a pull request, merge ref, fork, tag, or arbitrary SHA.
+2. Review `publish-image.yml` and its pinned actions. Confirm only the publish
+   job has `id-token: write` and `attestations: write`.
+3. Dispatch the workflow from `develop`. Preflight must pass before GitHub
+   resolves and enters `sandbox`.
+4. Review the one Linux X86_64 build and trusted OCI labels.
+5. Review the human-readable Trivy result and `trivy-results.json`. Publication
+   must stop before AWS authentication on any fixed HIGH or CRITICAL finding or
+   scanner failure.
+6. Review `sbom.spdx.json`, its SHA-256, and `image-build-metadata.json`.
+7. Confirm the one-day image archive checksum passes after download and no
+   second container build occurs.
+8. Approve the protected environment only after matching the account, region,
+   role, repository name, and repository URL to reviewed bootstrap outputs.
+9. Confirm STS identity, ECR repository ARN, immutable tags, scan on push, and
+   SSE-S3 checks pass before login.
+10. Confirm the unique `git-${GITHUB_SHA}-${GITHUB_RUN_ID}` tag did not already
+    exist and the already-built image is pushed only to the configured registry.
+11. Record the ECR-resolved digest and immutable
+    `ECR_REPOSITORY_URL@sha256:DIGEST`; never select the traceability tag for
+    Terraform.
+12. Review the bounded ECR scan and require zero HIGH and CRITICAL findings.
+    If the account scanning mode does not return the expected API status, stop
+    and decide the account-level scanning model; do not skip the gate.
+13. Verify provenance and SPDX SBOM attestations cryptographically for
+    `renanfenrich/staff-aws-platform-blueprint` and confirm both subject digests
+    equal the published image digest.
+14. Confirm at least two active OCI referrers are visible and preserve the
+    14-day evidence artifacts.
+15. Provide the reviewed immutable reference explicitly to a future Terraform
+    plan. Do not commit it automatically and do not update ECS in this procedure.
+
+### Publication recovery
+
+- **Readiness absent or environment denied:** correct the external setting or
+  approval; no image should exist.
+- **Wrong account, region, role, or repository:** stop, unset readiness, compare
+  bootstrap outputs and environment variables, and never broaden IAM first.
+- **Local scan or SBOM failure:** preserve evidence, remediate the source or
+  exact documented vulnerability exception, and build a new reviewed commit.
+- **Archive checksum or load failure:** treat the transfer as untrusted; do not
+  authenticate or push.
+- **Tag already exists:** preserve the immutable image, investigate the duplicate
+  run, and never overwrite or retag it.
+- **Push failure:** record Docker and ECR errors without tokens, verify narrow
+  permissions and repository identity, and retry only through a new reviewed
+  dispatch.
+- **Digest resolution failure:** preserve the push output and evidence, inspect
+  the exact trace tag with a human operator, and do not guess a digest.
+- **ECR scan fails or times out:** keep the image, mark the run failed, record
+  the observed status, and resolve scanning configuration before any use.
+- **Image pushed but provenance missing:** record the immutable digest and
+  missing provenance, do not delete or rebuild under the same tag, and design a
+  separate reviewed existing-digest recovery workflow if needed.
+- **Provenance present but SBOM attestation missing:** treat evidence as
+  incomplete, preserve the digest and standalone SBOM, and use the same
+  separate recovery boundary.
+- **Missing referrer or verification failure:** preserve bundles and ECR
+  metadata, confirm OCI support and source identity, and do not treat mere
+  attestation existence as proof.
+- **Subject expired or lifecycle affected evidence:** stop deployment selection,
+  review the lifecycle preview and ECR events, restore by a new build only when
+  source reproducibility and policy permit, and never add delete or lifecycle
+  mutation permission to the publisher.
+
+No automatic cleanup occurs after push because the publisher cannot delete
+images. A future recovery run must explicitly name and review an existing
+digest; this slice intentionally provides no such workflow.
 
 ## Prerequisites for the first sandbox apply
 
@@ -123,7 +216,8 @@ Do not proceed until every item is complete:
 2. Encrypted versioned remote state and locking are bootstrapped.
 3. GitHub OIDC trust is limited to this repository and protected sandbox
    environment.
-4. A build workflow has built once, scanned, attested, and pushed the API image.
+4. The manual publication workflow has built once, scanned, generated an SBOM,
+   pushed, resolved, attested, and verified the API image.
 5. The selected image digest, not a mutable tag, is recorded for Terraform.
 6. Plan, apply, and destroy workflows use separate least-privilege permissions,
    approvals, exact artifacts, and concurrency controls.
@@ -176,7 +270,8 @@ profile, but remote state and ECR contents still require deliberate review.
 4. Approve through the protected sandbox environment.
 5. Apply only the saved destroy plan.
 6. Confirm state has no managed sandbox resources.
-7. Check for residual ECR images, log groups, load balancers, public IPv4
+7. Confirm the bootstrap-owned ECR repository and its images remain retained,
+   then check for residual runtime log groups, load balancers, public IPv4
    addresses, and other chargeable resources.
 
 Production destroy is not a supported workflow.

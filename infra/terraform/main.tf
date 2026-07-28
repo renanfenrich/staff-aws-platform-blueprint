@@ -19,6 +19,43 @@ check "mandatory_tags" {
   }
 }
 
+check "external_ecr_repository_identity" {
+  assert {
+    condition = (
+      !var.deployment_enabled ||
+      try(
+        split(":", var.ecr_repository_arn)[3] == split(".", split("/", var.ecr_repository_url)[0])[3] &&
+        split(":", var.ecr_repository_arn)[4] == split(".", split("/", var.ecr_repository_url)[0])[0] &&
+        trimprefix(split(":", var.ecr_repository_arn)[5], "repository/") == join("/", slice(
+          split("/", var.ecr_repository_url),
+          1,
+          length(split("/", var.ecr_repository_url))
+        )) &&
+        (
+          (
+            split(":", var.ecr_repository_arn)[1] == "aws" &&
+            !startswith(split(":", var.ecr_repository_arn)[3], "cn-") &&
+            !startswith(split(":", var.ecr_repository_arn)[3], "us-gov-") &&
+            !endswith(split("/", var.ecr_repository_url)[0], ".amazonaws.com.cn")
+          ) ||
+          (
+            split(":", var.ecr_repository_arn)[1] == "aws-us-gov" &&
+            startswith(split(":", var.ecr_repository_arn)[3], "us-gov-") &&
+            !endswith(split("/", var.ecr_repository_url)[0], ".amazonaws.com.cn")
+          ) ||
+          (
+            split(":", var.ecr_repository_arn)[1] == "aws-cn" &&
+            startswith(split(":", var.ecr_repository_arn)[3], "cn-") &&
+            endswith(split("/", var.ecr_repository_url)[0], ".amazonaws.com.cn")
+          )
+        ),
+        false
+      )
+    )
+    error_message = "ecr_repository_arn and ecr_repository_url must identify the same account, region, and repository."
+  }
+}
+
 module "network" {
   count  = var.deployment_enabled ? 1 : 0
   source = "./modules/network"
@@ -30,16 +67,6 @@ module "network" {
   public_subnet_cidrs = var.public_subnet_cidrs
   tags                = local.mandatory_tags
   vpc_cidr            = var.vpc_cidr
-}
-
-module "ecr" {
-  count  = var.deployment_enabled ? 1 : 0
-  source = "./modules/ecr"
-
-  force_delete = var.ecr_force_delete
-  name         = local.resource_name
-  region       = var.aws_region
-  tags         = local.mandatory_tags
 }
 
 module "observability" {
@@ -56,7 +83,7 @@ module "iam" {
   count  = var.deployment_enabled ? 1 : 0
   source = "./modules/iam"
 
-  ecr_repository_arn = module.ecr[0].repository_arn
+  ecr_repository_arn = var.ecr_repository_arn
   log_group_arn      = module.observability[0].log_group_arn
   name               = local.resource_name
   tags               = local.mandatory_tags

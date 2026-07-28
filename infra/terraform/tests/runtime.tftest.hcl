@@ -5,13 +5,6 @@ mock_provider "aws" {
     }
   }
 
-  mock_resource "aws_ecr_repository" {
-    defaults = {
-      arn            = "arn:aws:ecr:us-east-1:111122223333:repository/fixture"
-      repository_url = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture"
-    }
-  }
-
   mock_resource "aws_ecs_task_definition" {
     defaults = {
       arn = "arn:aws:ecs:us-east-1:111122223333:task-definition/fixture:1"
@@ -49,7 +42,6 @@ run "disabled_mode_has_no_resources" {
   assert {
     condition = (
       length(module.network) == 0 &&
-      length(module.ecr) == 0 &&
       length(module.iam) == 0 &&
       length(module.alb) == 0 &&
       length(module.ecs) == 0 &&
@@ -94,6 +86,8 @@ run "enabled_sandbox_runtime" {
   variables {
     container_image    = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture@sha256:0000000000000000000000000000000000000000000000000000000000000001"
     deployment_enabled = true
+    ecr_repository_arn = "arn:aws:ecr:us-east-1:111122223333:repository/fixture"
+    ecr_repository_url = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture"
   }
 
   assert {
@@ -143,25 +137,10 @@ run "enabled_sandbox_runtime" {
   assert {
     condition = (
       jsondecode(module.iam[0].execution_policy).Statement[0].Resource == "*" &&
-      jsondecode(module.iam[0].execution_policy).Statement[1].Resource == module.ecr[0].repository_arn &&
+      jsondecode(module.iam[0].execution_policy).Statement[1].Resource == var.ecr_repository_arn &&
       jsondecode(module.iam[0].execution_policy).Statement[2].Resource == "${module.observability[0].log_group_arn}:*"
     )
     error_message = "Execution-role resources must be scoped except for the ECR authorization token."
-  }
-
-  assert {
-    condition = (
-      module.ecr[0].test_contract.image_tag_mutability == "IMMUTABLE" &&
-      module.ecr[0].test_contract.scan_on_push &&
-      module.ecr[0].test_contract.encryption_type == "AES256" &&
-      !module.ecr[0].test_contract.force_delete
-    )
-    error_message = "ECR must be immutable, encrypted, scan on push, and refuse force deletion."
-  }
-
-  assert {
-    condition     = module.ecr[0].test_contract.lifecycle_rule_count == 2
-    error_message = "ECR must have bounded image-retention rules."
   }
 
   assert {
@@ -191,7 +170,6 @@ run "enabled_sandbox_runtime" {
     condition = alltrue([
       for tags in [
         module.network[0].test_contract.mandatory_tags,
-        module.ecr[0].test_contract.mandatory_tags,
         module.iam[0].test_contract.mandatory_tags,
         module.alb[0].test_contract.mandatory_tags,
         module.ecs[0].test_contract.mandatory_tags,
@@ -213,6 +191,18 @@ run "enabled_sandbox_runtime" {
     )
     error_message = "The application container must retain its runtime hardening."
   }
+
+  assert {
+    condition = (
+      output.ecr_repository_url == var.ecr_repository_url &&
+      module.network[0].test_contract.resource_count +
+      module.iam[0].test_contract.resource_count +
+      module.alb[0].test_contract.resource_count +
+      module.ecs[0].test_contract.resource_count +
+      module.observability[0].test_contract.resource_count == 26
+    )
+    error_message = "Enabled runtime must consume the external repository and manage exactly 26 resources."
+  }
 }
 
 run "reject_latest_image" {
@@ -221,9 +211,63 @@ run "reject_latest_image" {
   variables {
     container_image    = "example.invalid/api:latest"
     deployment_enabled = true
+    ecr_repository_arn = "arn:aws:ecr:us-east-1:111122223333:repository/fixture"
+    ecr_repository_url = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture"
   }
 
   expect_failures = [var.container_image]
+}
+
+run "reject_cross_repository_image" {
+  command = plan
+
+  variables {
+    container_image    = "111122223333.dkr.ecr.us-east-1.amazonaws.com/other@sha256:0000000000000000000000000000000000000000000000000000000000000001"
+    deployment_enabled = true
+    ecr_repository_arn = "arn:aws:ecr:us-east-1:111122223333:repository/fixture"
+    ecr_repository_url = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture"
+  }
+
+  expect_failures = [var.container_image]
+}
+
+run "reject_mutable_image_reference" {
+  command = plan
+
+  variables {
+    container_image    = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture:develop"
+    deployment_enabled = true
+    ecr_repository_arn = "arn:aws:ecr:us-east-1:111122223333:repository/fixture"
+    ecr_repository_url = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture"
+  }
+
+  expect_failures = [var.container_image]
+}
+
+run "reject_mismatched_repository_identity" {
+  command = plan
+
+  variables {
+    container_image    = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture@sha256:0000000000000000000000000000000000000000000000000000000000000001"
+    deployment_enabled = true
+    ecr_repository_arn = "arn:aws:ecr:us-east-1:111122223333:repository/other"
+    ecr_repository_url = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture"
+  }
+
+  expect_failures = [check.external_ecr_repository_identity]
+}
+
+run "reject_repository_partition_mismatch" {
+  command = plan
+
+  variables {
+    container_image    = "111122223333.dkr.ecr.cn-north-1.amazonaws.com/fixture@sha256:0000000000000000000000000000000000000000000000000000000000000001"
+    deployment_enabled = true
+    ecr_repository_arn = "arn:aws-cn:ecr:cn-north-1:111122223333:repository/fixture"
+    ecr_repository_url = "111122223333.dkr.ecr.cn-north-1.amazonaws.com/fixture"
+  }
+
+  expect_failures = [check.external_ecr_repository_identity]
 }
 
 run "reject_production_public_tasks" {
