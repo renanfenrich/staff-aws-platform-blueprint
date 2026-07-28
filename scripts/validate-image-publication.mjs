@@ -120,19 +120,16 @@ assert.doesNotMatch(
 );
 
 const ecrLoginIndex = publish.indexOf("aws-actions/amazon-ecr-login@");
-const attestCredentialIndex = publish.indexOf(
-  "Expose scoped registry authentication to attest",
+const dockerConfigGuardIndex = publish.indexOf(
+  "Reserve the default Docker configuration for ECR authentication",
 );
 const firstAttestationIndex = publish.indexOf("uses: actions/attest@");
 assert(ecrLoginIndex > 0);
-assert(attestCredentialIndex > ecrLoginIndex);
-assert(firstAttestationIndex > attestCredentialIndex);
+assert(dockerConfigGuardIndex > 0 && dockerConfigGuardIndex < ecrLoginIndex);
+assert(firstAttestationIndex > ecrLoginIndex);
 assert.match(publish, /test ! -e "\$\{HOME\}\/.docker\/config\.json"/);
-assert.match(
-  publish,
-  /install -D -m 600 "\$\{DOCKER_CONFIG\}\/config\.json" "\$\{HOME\}\/.docker\/config\.json"/,
-);
 assert.match(publish, /rm -f "\$\{HOME\}\/.docker\/config\.json"/);
+assert.doesNotMatch(publish, /DOCKER_CONFIG|install -D -m 600/);
 
 const attestUses = [
   ...publish.matchAll(/uses: actions\/attest@[0-9a-f]{40} # v4\.2\.0/g),
