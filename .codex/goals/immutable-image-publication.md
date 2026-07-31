@@ -45,6 +45,9 @@ is one immutable ECR digest.
 
 ## Next expected slice
 
-Apply the reviewed publisher-policy narrowing, execute a new image publication
-through both attestations, migrate bootstrap state, and then add a separate
-reviewed Terraform plan workflow.
+Prepare and review the bootstrap-state migration from protected local state to
+the protected S3 bootstrap key. Do not reapply the publisher-policy narrowing or
+rerun publication merely to prove attestations; the successful hosted run
+already verified both attestations and the OCI referrers. Runtime initialization,
+protected plan/apply/destroy workflows, and deployment remain separate later
+slices.

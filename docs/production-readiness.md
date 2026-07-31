@@ -37,12 +37,18 @@ production-ready platform.
 ## Required before the first sandbox runtime apply
 
 - Migrate bootstrap state to its protected key and initialize runtime state
-  against the sandbox key through separately approved procedures.
+  against the sandbox key through separately approved procedures. This requires
+  an encrypted local-state backup, exact key/account verification, lineage and
+  serial checks, and post-migration S3 version evidence.
+- Verify native lock behavior on the bootstrap and sandbox keys before relying
+  on remote state.
 - Record the selected immutable digest explicitly for a future reviewed
   Terraform plan. ECR Basic findings remain asynchronous advisory evidence.
 - Add a manual plan workflow that uploads one reviewed plan artifact.
 - Add a protected sandbox apply workflow that consumes exactly that plan.
 - Add a confirmation-protected destroy workflow for the exact sandbox.
+- Initialize the runtime backend only after bootstrap-state migration and
+  remote-state verification are complete.
 - Add CloudWatch dashboards and alarms with a tested notification destination.
 - Add AWS Budget actual and forecast alerts and verify the recipient.
 - Review the target AWS account, region, Availability Zones, service quotas,
@@ -105,6 +111,10 @@ promotion, or destroy automation.
 - ARM64 may reduce compute cost, but it requires a proven multi-architecture
   build, scan, and performance path first.
 
-The recommended next steps are bootstrap-state migration through its separate
-controlled change, then a protected Terraform plan workflow that consumes the
-recorded digest. Runtime apply and destroy remain later separate slices.
+The next infrastructure objective is to prepare and review the bootstrap-state
+migration from protected local state to the protected S3 bootstrap key. That
+separate change must establish the encrypted backup, exact backend key,
+lineage/serial checks, native-lock evidence, and explicit migration approval
+before initialization. Protected plan/apply/destroy workflows, runtime
+deployment and operational validation, monitoring, budget controls, and tested
+recovery remain later slices.

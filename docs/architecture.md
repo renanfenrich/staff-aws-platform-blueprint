@@ -6,11 +6,12 @@ Terraform represents a disposable sandbox runtime plus a longer-lived state,
 identity, and artifact bootstrap. `deployment_enabled` and `bootstrap_enabled`
 both default to `false`; local plans contain zero AWS resource changes and do
 not authenticate to AWS. The bootstrap has been applied and verified from local
-state, the protected GitHub environment and OIDC smoke are operational, and two
-immutable images have been pushed. The first publication stopped while ECR Basic
-scanning remained `IN_PROGRESS`; the later run exposed an attestation registry
-credential compatibility gap. Bootstrap state has not been migrated and the
-runtime has not been initialized or applied.
+state, the protected GitHub environment and OIDC smoke are operational, and a
+later build-once publication completed with verified provenance and SPDX SBOM
+attestations. Earlier publication attempts still record ECR Basic scan timing
+and attestation-credential failures. A refresh-enabled live Terraform plan
+reported zero changes for the narrowed publisher IAM policy. Bootstrap state has
+not been migrated and the runtime has not been initialized or applied.
 
 ## State, identity, and artifact bootstrap
 
@@ -310,7 +311,7 @@ sandbox and has a time-bounded Trivy exception.
 | Delayed registry findings | ECR scan on push retained as asynchronous advisory evidence | No automated post-publication response exists |
 | Incomplete dependency evidence | SPDX SBOM from the exact image | SBOM accuracy depends on scanner detection |
 | Forged provenance | GitHub signed digest-bound attestation | Trusted workflow compromise can attest malicious output |
-| SBOM and image mismatch | Same subject digest for provenance and SBOM | Attestation has not been operationally verified |
+| SBOM and image mismatch | Same subject digest for provenance and SBOM, with cryptographic verification | Trusted workflow compromise could attest a different approved digest |
 | Wrong AWS account publication | STS account and registry account comparison | Incorrect approved environment variables can block the run |
 | Wrong repository publication | Exact variables, repository inspection, and IAM ARN | Account administrators remain outside the role boundary |
 | Publisher deletes evidence | No image or repository delete action | AWS administrators can still delete artifacts |

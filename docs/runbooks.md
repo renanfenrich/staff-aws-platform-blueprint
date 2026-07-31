@@ -5,8 +5,11 @@ GitHub environment, lifecycle preview, OIDC smoke, and first successful image
 publication have been exercised, but bootstrap state has not been migrated. The
 successful run published an immutable digest, created and verified provenance
 and SPDX SBOM attestations, and observed ECR scan-on-push and active OCI
-referrers. A live publisher-policy refresh plan produced zero changes. No ECS
-deployment or runtime Terraform apply has occurred. The repository has no plan,
+referrers. A live publisher-policy refresh plan produced zero changes. Earlier
+publication attempts exposed ECR Basic scan timing and registry-credential
+compatibility issues; those failures remain useful recovery scenarios. No ECS
+deployment or runtime Terraform apply has occurred. Bootstrap-state migration
+is now the next real infrastructure operation. The repository has no plan,
 apply, deployment, promotion, recovery, or destroy workflow. Do not substitute
 ad hoc Terraform or console changes.
 
