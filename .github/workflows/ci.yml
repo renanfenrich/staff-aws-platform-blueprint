@@ -90,5 +90,5 @@ jobs:
       - name: Validate credential-free Terraform foundations
         run: |
           make tf-format-check tf-validate tf-plan tf-test
-          make bootstrap-format-check bootstrap-validate bootstrap-plan-disabled bootstrap-test
+          make bootstrap-format-check bootstrap-validate bootstrap-plan-disabled bootstrap-test bootstrap-state-migration-check
           make aws-foundation-check image-publication-check workflow-lint
