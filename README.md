@@ -3,14 +3,11 @@
 A production-oriented reference blueprint for running a small containerized
 HTTP API on AWS ECS Fargate with Terraform and GitHub Actions.
 
-> **Foundation status:** Terraform represents a deployable, disposable sandbox
-> runtime plus an isolated bootstrap that owns remote state, GitHub OIDC, ECR,
-> and a dedicated image-publisher role. The bootstrap, protected GitHub
-> environment, OIDC smoke, and two immutable image pushes have been exercised.
-> Both remain unattested: the first run waited on ECR Basic scanning and the
-> second exposed a registry-credential compatibility gap in `actions/attest`.
-> The runtime is disabled and unapplied, and the repository is not
-> production-ready.
+> **Foundation status:** The bootstrap, protected GitHub environment, and OIDC
+> smoke are operational. A later build-once publication completed with verified
+> provenance and SPDX SBOM attestations, and the live publisher IAM policy
+> already matches Terraform. Bootstrap state remains local; the runtime is
+> disabled and unapplied. The repository is not production-ready.
 
 ## What this demonstrates
 

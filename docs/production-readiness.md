@@ -5,12 +5,14 @@
 The repository contains a deployable Terraform runtime graph, a separate
 remote-state, OIDC, ECR, and image-publisher bootstrap, and a manual build-once
 publication workflow. The bootstrap, protected GitHub environment, lifecycle
-preview, OIDC smoke, pre-authentication Trivy gate, and two immutable pushes
-have been exercised. Both pushed images remain unattested: the first waited on
-ECR Basic scanning while `IN_PROGRESS`, and the later run exposed an attestation
-registry credential compatibility gap. Bootstrap state migration, runtime
-initialization and apply, deployment, rollback, destroy, and cost review have
-not occurred. This is not a production-ready platform.
+preview, OIDC smoke, pre-authentication Trivy gate, and first successful
+attested immutable publication have been exercised. That run resolved an
+immutable digest, created and verified provenance and SPDX SBOM attestations,
+and observed the ECR scan-on-push control and active OCI referrers. A live
+Terraform refresh plan also confirmed the narrowed publisher policy needs zero
+changes. Bootstrap state migration, runtime initialization and apply,
+deployment, rollback, destroy, and cost review have not occurred. This is not a
+production-ready platform.
 
 ## Implemented and locally validated
 
@@ -28,22 +30,25 @@ not occurred. This is not a production-ready platform.
 | State IAM | Exact sandbox state and lock objects; no state deletion, bootstrap access, or workload actions |
 | Smoke workflow | Manual-only identity and bucket-control checks with job-level OIDC permission |
 | Registry graph | Bootstrap-owned immutable, scan-on-push, SSE-S3 ECR with prevent-destroy and subject-focused retention |
-| Publisher IAM | Exact environment trust; one repository; no delete, repository mutation, state, or workload action |
-| Publication workflow | Manual `develop` dispatch, one X86_64 build, authoritative pre-auth Trivy gate and SPDX SBOM, checksummed transfer, digest resolution, two attestations, bounded verification |
+| Publisher IAM | Exact environment trust; one repository; no delete, repository mutation, state, or workload action; live refresh plan shows zero changes |
+| Publication workflow | Successful manual `develop` dispatch: one X86_64 build, authoritative pre-auth Trivy gate and SPDX SBOM, checksummed transfer, immutable digest resolution, two verified attestations, and active OCI referrers |
 | Supply chain | Exact npm, provider, tool, image, and action pins; shared scan and SBOM scripts |
 
 ## Required before the first sandbox runtime apply
 
-- Apply only the reviewed publisher-policy narrowing that removes ECR
-  scan-findings access.
 - Migrate bootstrap state to its protected key and initialize runtime state
-  against the sandbox key through separately approved procedures.
-- Dispatch publication from `develop` and review the Trivy report, SBOM,
-  provenance, referrers, and immutable digest. ECR Basic findings remain
-  asynchronous advisory evidence.
+  against the sandbox key through separately approved procedures. This requires
+  an encrypted local-state backup, exact key/account verification, lineage and
+  serial checks, and post-migration S3 version evidence.
+- Verify native lock behavior on the bootstrap and sandbox keys before relying
+  on remote state.
+- Record the selected immutable digest explicitly for a future reviewed
+  Terraform plan. ECR Basic findings remain asynchronous advisory evidence.
 - Add a manual plan workflow that uploads one reviewed plan artifact.
 - Add a protected sandbox apply workflow that consumes exactly that plan.
 - Add a confirmation-protected destroy workflow for the exact sandbox.
+- Initialize the runtime backend only after bootstrap-state migration and
+  remote-state verification are complete.
 - Add CloudWatch dashboards and alarms with a tested notification destination.
 - Add AWS Budget actual and forecast alerts and verify the recipient.
 - Review the target AWS account, region, Availability Zones, service quotas,
@@ -83,15 +88,12 @@ promotion, or destroy automation.
   capacity.
 - Container Insights, metrics, alarms, access logs, WAF, autoscaling, budgets,
   Secrets Manager integration, and persistence are absent.
-- ECR Basic scan on push remained `IN_PROGRESS` beyond the first publication
-  window; no automated post-publication response to later findings exists.
-- The reviewed isolated ECR-login and temporary attestation-home path has not
-  yet been proven in a hosted attestation run.
-- Repository immutability and the post-push failure path were observed, but OCI
-  referrers, provenance, SBOM attestation, and cryptographic verification remain
-  unproven.
-- The live publisher role retains scan-findings read access until the reviewed
-  Terraform narrowing is explicitly applied.
+- ECR Basic scan-on-push and active OCI referrers were observed during the
+  successful publication, but Basic findings remain asynchronous and have no
+  automated post-publication response.
+- Immutable digest publication, provenance, SPDX SBOM attestation, and
+  cryptographic verification are proven; no ECS deployment or runtime Terraform
+  apply occurred.
 - AES-256 ECR encryption uses the AWS-managed service key; a customer-managed
   key decision is deferred to production requirements.
 - State uses cost-conscious SSE-S3; a dedicated KMS key remains a production
@@ -109,7 +111,10 @@ promotion, or destroy automation.
 - ARM64 may reduce compute cost, but it requires a proven multi-architecture
   build, scan, and performance path first.
 
-The recommended next steps are the reviewed publisher-policy narrowing, a new
-publication that completes both attestations, bootstrap state migration, and a
-separate protected Terraform plan workflow that consumes the recorded digest.
-Runtime apply and destroy remain later separate slices.
+The next infrastructure objective is to prepare and review the bootstrap-state
+migration from protected local state to the protected S3 bootstrap key. That
+separate change must establish the encrypted backup, exact backend key,
+lineage/serial checks, native-lock evidence, and explicit migration approval
+before initialization. Protected plan/apply/destroy workflows, runtime
+deployment and operational validation, monitoring, budget controls, and tested
+recovery remain later slices.
