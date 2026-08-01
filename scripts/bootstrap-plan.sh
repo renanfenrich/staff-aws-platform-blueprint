@@ -2,14 +2,31 @@
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+terraform_dir=$(mktemp -d "${TMPDIR:-/tmp}/staff-blueprint-bootstrap.XXXXXX")
 plan_file=$(mktemp "${TMPDIR:-/tmp}/staff-blueprint-bootstrap-plan.XXXXXX")
 plan_json=$(mktemp "${TMPDIR:-/tmp}/staff-blueprint-bootstrap-plan-json.XXXXXX")
-trap 'rm -f "${plan_file}" "${plan_json}"' EXIT HUP INT TERM
+trap 'rm -rf "${terraform_dir}"; rm -f "${plan_file}" "${plan_json}"' EXIT HUP INT TERM
+
+# The bootstrap root has a partial S3 backend for the approved migration, but
+# disabled validation must remain local and credential-free.
+find "${repository_root}/infra/bootstrap" \
+  -mindepth 1 -maxdepth 1 \
+  ! -name .terraform \
+  ! -name backend.tf \
+  ! -name backend.hcl \
+  ! -name '*.tfbackend' \
+  ! -name '*.tfstate' \
+  ! -name '*.tfstate.*' \
+  ! -name '*.tfplan' \
+  ! -name terraform.tfvars \
+  -exec cp -R {} "${terraform_dir}" \;
+
+terraform -chdir="${terraform_dir}" init -backend=false -input=false
 
 AWS_ACCESS_KEY_ID=credential-free-bootstrap-plan \
 AWS_SECRET_ACCESS_KEY=credential-free-bootstrap-plan \
 AWS_EC2_METADATA_DISABLED=true \
-  terraform -chdir="${repository_root}/infra/bootstrap" plan \
+  terraform -chdir="${terraform_dir}" plan \
     -input=false \
     -lock=false \
     -refresh=false \
@@ -17,7 +34,7 @@ AWS_EC2_METADATA_DISABLED=true \
     -var='cost_center=portfolio' \
     -var='owner=local-validation'
 
-terraform -chdir="${repository_root}/infra/bootstrap" show -json "${plan_file}" >"${plan_json}"
+terraform -chdir="${terraform_dir}" show -json "${plan_file}" >"${plan_json}"
 
 node -e '
   const fs = require("node:fs");

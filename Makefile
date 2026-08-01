@@ -6,6 +6,7 @@ IMAGE_EVIDENCE_DIR := .artifacts/image
 
 .PHONY: help setup run lint typecheck test security container docs-check workflow-lint \
 	aws-foundation-check bootstrap-init bootstrap-format-check bootstrap-validate \
+	bootstrap-init-local bootstrap-init-remote bootstrap-state-migration-check \
 	bootstrap-plan-disabled bootstrap-test tf-init tf-init-local tf-init-remote \
 	tf-format tf-format-check tf-validate tf-plan tf-test image-build image-scan \
 	image-sbom image-publication-check validate
@@ -57,20 +58,44 @@ workflow-lint: ## Validate GitHub Actions workflow syntax
 aws-foundation-check: ## Statically validate the backend, OIDC trust, and smoke workflow
 	node scripts/validate-aws-foundation.mjs
 
-bootstrap-init: ## Initialize the bootstrap root with local state
+bootstrap-init-local: ## Initialize the bootstrap root locally without AWS
 	terraform -chdir=$(BOOTSTRAP_DIR) init -backend=false -input=false
+
+bootstrap-init: bootstrap-init-local ## Backwards-compatible local bootstrap initialization
+
+bootstrap-init-remote: ## Initialize bootstrap with an explicit remote backend config
+	@test -n "$(BACKEND_CONFIG)" || \
+		{ echo "BACKEND_CONFIG must name an explicit backend configuration file." >&2; exit 1; }
+	@test -f "$(BACKEND_CONFIG)" || \
+		{ echo "Backend configuration file not found: $(BACKEND_CONFIG)" >&2; exit 1; }
+	@backend_config="$$(realpath "$(BACKEND_CONFIG)")"; \
+	case "$${backend_config}" in /*) ;; *) \
+		echo "BACKEND_CONFIG must resolve to an absolute path." >&2; exit 1 ;; esac; \
+	terraform -chdir=$(BOOTSTRAP_DIR) init -input=false -reconfigure \
+		-backend-config="$${backend_config}"
+
+bootstrap-state-migration-check: ## Validate the credential-free migration boundary
+	node scripts/validate-bootstrap-state-migration.mjs
 
 bootstrap-format-check: ## Check bootstrap Terraform formatting
 	terraform fmt -check -recursive $(BOOTSTRAP_DIR)
 
-bootstrap-validate: bootstrap-init ## Validate the credential-free bootstrap root
+bootstrap-validate: bootstrap-init-local ## Validate the credential-free bootstrap root
 	terraform -chdir=$(BOOTSTRAP_DIR) validate
 
-bootstrap-plan-disabled: bootstrap-init ## Prove the disabled bootstrap plan has zero changes
+bootstrap-plan-disabled: bootstrap-init-local ## Prove the disabled bootstrap plan has zero changes
 	./scripts/bootstrap-plan.sh
 
-bootstrap-test: bootstrap-init ## Test the enabled bootstrap graph with a mock AWS provider
-	terraform -chdir=$(BOOTSTRAP_DIR) test
+bootstrap-test: bootstrap-init-local ## Test the enabled bootstrap graph with a mock AWS provider
+	@test_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/staff-bootstrap-test.XXXXXX")"; \
+	trap 'rm -rf "$$test_dir"' EXIT HUP INT TERM; \
+	find "$(BOOTSTRAP_DIR)" -mindepth 1 -maxdepth 1 \
+		! -name .terraform ! -name backend.tf ! -name backend.hcl \
+		! -name '*.tfbackend' ! -name '*.tfstate' ! -name '*.tfstate.*' \
+		! -name '*.tfplan' ! -name terraform.tfvars \
+		-exec cp -R {} "$$test_dir" \;; \
+	terraform -chdir="$$test_dir" init -backend=false -input=false; \
+	terraform -chdir="$$test_dir" test
 
 tf-init: tf-init-local ## Initialize Terraform without a remote backend
 
@@ -101,6 +126,6 @@ tf-test: tf-init-local ## Test the enabled runtime graph with a mock AWS provide
 	terraform -chdir=$(TF_DIR) test
 
 validate: lint typecheck test docs-check workflow-lint aws-foundation-check \
-	image-publication-check \
+	image-publication-check bootstrap-state-migration-check \
 	tf-format-check tf-validate tf-plan tf-test bootstrap-format-check \
 	bootstrap-validate bootstrap-plan-disabled bootstrap-test ## Run the local quality gate

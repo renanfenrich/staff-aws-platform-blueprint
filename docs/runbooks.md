@@ -73,26 +73,207 @@ account approval, reviewed cost, and explicit apply and migration approvals.
 
 ### Phase 2: migrate and initialize state
 
-1. Preserve an encrypted backup of the local bootstrap state. In a separate
-   reviewed change, add the partial S3 backend to the bootstrap root with
-   `encrypt=true` and `use_lockfile=true`, and prepare an untracked backend
-   config using
-   `staff-aws-platform-blueprint/bootstrap/terraform.tfstate`.
-2. With the same verified human session, run `terraform init -migrate-state`
-    for the bootstrap root and explicitly approve only the intended local-to-S3
-    migration.
-3. Verify bootstrap state and its version in S3, then initialize the runtime
-    root with
-    `make tf-init-remote BACKEND_CONFIG=infra/terraform/backend.hcl`, using the
-    sandbox key from the committed example and process-environment credentials.
-4. Prove native locking on each key through a controlled contention test.
-    Confirm `.tflock` creation and release without changing managed resources.
-5. Record remote-state reads, versions, recovery evidence, lock evidence, exact
-    role, account, region, and repository settings. Securely delete temporary
-    local state copies only after remote reads and recovery are independently
-    verified.
-6. Reconfirm that GitHub contains no AWS access key, secret key, session token,
-    backend credentials, local state, or plan file.
+This is an operator procedure, not an automatic Make target. The migration
+change must be merged and the operator must work from the exact approved
+commit. No credentials belong in a backend config; use only the already
+authenticated human process environment.
+
+#### 1. Preconditions and maintenance window
+
+Record the maintenance window, operator, approved AWS account and region,
+rollback owner, backup retention, and approval reference. Confirm that no
+Terraform apply, destroy, deployment, ECS operation, IAM change, image
+publication, state import, or console modification is planned.
+
+#### 2. Exact approved commit
+
+Start from a clean checkout of the exact merged `develop` commit approved for
+this operation. Record the full commit SHA and Terraform `1.15.8` version.
+Do not proceed from a feature branch, dirty checkout, or unreviewed commit.
+
+#### 3. Human AWS identity verification
+
+Use the short-lived human session already present in the process environment:
+
+```bash
+aws sts get-caller-identity
+```
+
+Compare the account, caller role, region, bucket, and bootstrap key with the
+approval. Do not print or record access keys, secret keys, session tokens,
+OIDC tokens, or unnecessary caller-ARN detail.
+
+#### 4. Untracked variable and backend files
+
+Prepare ignored local files from the committed examples:
+
+```text
+BOOTSTRAP_VAR_FILE=/absolute/path/to/infra/bootstrap/terraform.tfvars
+BOOTSTRAP_BACKEND_CONFIG=/absolute/path/to/infra/bootstrap/backend.hcl
+```
+
+The backend config must contain the approved bucket, region, and exact key
+`staff-aws-platform-blueprint/bootstrap/terraform.tfstate`; it must contain no
+credentials, role ARN, or session token. Confirm both files are ignored and
+the working tree is clean.
+
+#### 5. Target-key absence
+
+Run the committed read-only preflight with `APPROVED_BRANCH`,
+`APPROVED_COMMIT`, `EXPECTED_AWS_ACCOUNT_ID`, and `EXPECTED_AWS_REGION`. It
+must prove the protected bucket controls, exact target key, absent target
+`.tflock`, local state presence, and zero-change refresh plan. If either target
+object exists or any check is inconclusive, stop; do not adopt, overwrite, or
+delete it.
+
+#### 6. Encrypted backup
+
+Set `umask 077` and create the protected evidence directory outside the
+repository. Require `age`, `AGE_RECIPIENT`, and `AGE_IDENTITY_FILE`. Pull the
+local state only into that directory, calculate its SHA-256, and encrypt it:
+
+```bash
+terraform -chdir=infra/bootstrap state pull > "$EVIDENCE_DIR/bootstrap.tfstate"
+sha256sum "$EVIDENCE_DIR/bootstrap.tfstate"
+age --encrypt --recipient "$AGE_RECIPIENT" \
+  --output "$EVIDENCE_DIR/bootstrap.tfstate.age" \
+  "$EVIDENCE_DIR/bootstrap.tfstate"
+```
+
+Never commit or upload the backup. Do not alter the original local state.
+
+#### 7. Backup recovery verification
+
+Decrypt the age file to a second protected temporary file, compare its SHA-256
+with the plaintext snapshot, record only the checksums and result, and remove
+the temporary decrypted copy after verification. Preserve the encrypted backup
+for the documented retention period.
+
+#### 8. Zero-change pre-migration plan
+
+Run a normal refresh-enabled bootstrap plan with `-detailed-exitcode` and the
+approved variables. Require exit code `0` and no creates, updates, deletes,
+replacements, IAM, ECR, S3, or OIDC changes. Exit code `2` is drift or a
+configuration change: stop and obtain separate review. Do not save or apply a
+plan.
+
+#### 9. Approval boundary
+
+Print a sanitized summary containing only the source local state, destination
+bucket/key, account, region, source lineage, serial, resource count, backup
+checksum, approved commit, and plan result. Require a new starting instruction
+containing exactly `APPROVE_BOOTSTRAP_STATE_MIGRATION`. Do not infer approval,
+pipe `yes`, suppress Terraform's prompt, or use `-force-copy`.
+
+#### 10. Exact migration command
+
+Run this command interactively and review Terraform's displayed source and
+destination before confirming the migration prompt:
+
+```bash
+terraform -chdir=infra/bootstrap init \
+  -migrate-state \
+  -backend-config="/absolute/path/to/infra/bootstrap/backend.hcl"
+```
+
+Answer only when the displayed source and destination exactly match the
+approved summary. Run no other Terraform mutation concurrently.
+
+#### 11. Remote-state verification
+
+Verify the exact bootstrap object exists with a version ID, versioning remains
+enabled, server-side encryption is present, and no unexpected adjacent key
+exists. Re-read state through Terraform and compare lineage, serial, sorted
+resource-address set, resource count, and canonical content with the protected
+source snapshot. Preserve local state and backup while comparing.
+
+#### 12. Clean reinitialization verification
+
+Move only the generated bootstrap `.terraform` directory to protected storage
+outside the repository. Then run:
+
+```bash
+make bootstrap-init-remote \
+  BACKEND_CONFIG="/absolute/path/to/infra/bootstrap/backend.hcl"
+```
+
+Verify that a clean initialization reads the same remote lineage, serial, and
+resources. Cached backend metadata is not sufficient evidence.
+
+#### 13. Zero-change post-migration plan
+
+Run the same refresh-enabled normal plan against the remote backend with
+`-detailed-exitcode`. Require exit code `0` and no infrastructure diff. Do not
+apply. Any change means migration is incomplete and requires separate review.
+
+#### 14. Runtime remote initialization
+
+Inspect runtime local state before initializing it. If it is absent or empty,
+prepare the ignored runtime backend config with the committed sandbox key and
+run:
+
+```bash
+make tf-init-remote \
+  BACKEND_CONFIG="/absolute/path/to/infra/terraform/backend.hcl"
+```
+
+Use `-reconfigure`, never `-migrate-state`; verify the disabled runtime plan
+remains zero-resource. If managed runtime state exists, stop and require a
+separate reviewed runtime-state migration. Do not enable deployment or create
+ECS resources.
+
+#### 15. Bootstrap and runtime lock-contention tests
+
+Run the committed helper once for each initialized key, with the explicit
+backend config and exact expected key:
+
+```bash
+BACKEND_CONFIG="/absolute/path/to/infra/bootstrap/backend.hcl" \
+EXPECTED_STATE_KEY="staff-aws-platform-blueprint/bootstrap/terraform.tfstate" \
+./scripts/verify-s3-native-locking.sh bootstrap
+
+BACKEND_CONFIG="/absolute/path/to/infra/terraform/backend.hcl" \
+EXPECTED_STATE_KEY="staff-aws-platform-blueprint/sandbox/terraform.tfstate" \
+./scripts/verify-s3-native-locking.sh runtime
+```
+
+Each test must observe Terraform creating `.tflock`, reject a second plan,
+resume and terminate the first process cleanly, and observe natural lock
+removal. The helper must never create or delete lock objects or use
+`terraform force-unlock`. An inconclusive test is a failure.
+
+#### 16. Evidence capture
+
+Store owner-only sanitized metadata outside the repository: identity summary,
+approved commit, tool/provider checksums, bucket, region, key, lineage, serial,
+resource count, pre/post plan results, backup checksums, object version/ETag/
+encryption, lock results, timestamps, and approval reference. Never store
+credentials, unencrypted state, full state values, or a full caller ARN when
+unnecessary.
+
+#### 17. Local plaintext-state retention and later removal
+
+Do not clean up while migration status is uncertain. Retain the original local
+state, encrypted backup, evidence, and S3 versions until remote read,
+source/target comparison, clean reinitialization, both zero-change plans,
+version verification, runtime initialization, and both lock tests pass. Then
+remove temporary plaintext copies and, only after one final remote read, remove
+obsolete local plaintext state as a recorded logical deletion. Do not claim
+secure deletion on SSD or copy-on-write storage.
+
+#### 18. Failure and rollback handling
+
+- Migration failure: preserve local state, encrypted backup, and every S3
+  version; do not rerun immediately or delete either copy.
+- Unexpected target object: stop; never overwrite, adopt, or delete it.
+- State mismatch or plan change: stop all Terraform operations and compare
+  lineage, serial, addresses, and versions under a separate recovery review.
+- Remaining lock: confirm no process owns it, record metadata, and do not
+  manually delete it or use `force-unlock` without separate exact approval.
+
+At no point may this procedure delete a state object or lock object, run a
+resource apply/destroy, run a runtime apply, or claim success before remote
+reads, versions, plans, and native locking are verified.
 
 Never pass credentials through `-backend-config`. Never manually delete a lock
 object without proving that no Terraform process owns it.
