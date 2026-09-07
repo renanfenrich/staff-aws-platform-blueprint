@@ -205,7 +205,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
       - name: Configure 15-minute AWS credentials
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           audience: sts.amazonaws.com
           aws-region: ${{ vars.AWS_REGION }}
@@ -245,7 +245,7 @@ jobs:
             <<< "${repository}" >/dev/null
 
       - name: Authenticate only to the configured ECR registry
-        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
         with:
           registries: ${{ steps.configuration.outputs.account_id }}
           mask-password: true
@@ -334,7 +334,7 @@ jobs:
         id: provenance
         env:
           HOME: ${{ steps.configuration.outputs.attest_home }}
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ vars.ECR_REPOSITORY_URL }}
           subject-digest: ${{ steps.resolve.outputs.digest }}
@@ -345,7 +345,7 @@ jobs:
         id: sbom_attestation
         env:
           HOME: ${{ steps.configuration.outputs.attest_home }}
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ vars.ECR_REPOSITORY_URL }}
           subject-digest: ${{ steps.resolve.outputs.digest }}
