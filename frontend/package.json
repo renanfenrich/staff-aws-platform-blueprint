@@ -2,6 +2,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
