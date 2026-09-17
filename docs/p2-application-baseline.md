@@ -5,7 +5,9 @@ browser uses an HttpOnly, SameSite=Lax opaque-session cookie; PostgreSQL stores
 only its SHA-256 digest. Passwords use Argon2id. Projects are always queried by
 the authenticated owner, and task access is scoped through the owned project.
 
-Run `make db-up db-migrate`, then `npm start` and `npm --prefix frontend run dev`.
+Copy `.env.example` to an untracked `.env` and replace its local password
+placeholder, then run `make db-up db-migrate`, `npm start`, and
+`npm --prefix frontend run dev`.
 Migrations in `db/migrations` are versioned, checksummed, transactional where
 PostgreSQL permits, and are deliberately separate from application startup.
 `/health` is process-only; `/ready` performs a bounded PostgreSQL `SELECT 1`.
