@@ -113,7 +113,9 @@ Commit titles.
 
 Start with [the architecture overview](docs/architecture.md), then read the
 [runbooks](docs/runbooks.md) and
-[production-readiness gap analysis](docs/production-readiness.md).
+[production-readiness gap analysis](docs/production-readiness.md). The current
+goal's P1 inventory and phased implementation plan is in the
+[architecture gap analysis](docs/p1-architecture-gap-analysis.md).
 
 ## License
 
