@@ -14,6 +14,9 @@ maintenance or end of life.
 - Terraform CLI and providers use exact constraints and a committed provider
   lockfile for each independent root.
 - Container bases use immutable digests and never `latest`.
+- When a fixed base-image package version is required between base-image digest
+  refreshes, the Dockerfile pins that package version and the Trivy gate proves
+  the resulting runtime image has no HIGH or CRITICAL fixed findings.
 - GitHub Actions use full commit SHAs with readable release comments.
 - Local and publication image scanning and SPDX SBOM generation share the
   digest-pinned Trivy `0.72.0` container and the same HIGH/CRITICAL,
