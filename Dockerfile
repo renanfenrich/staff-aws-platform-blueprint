@@ -12,7 +12,8 @@ FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     PORT=8080
 WORKDIR /app
-RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* \
+RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 \
+    && rm -rf /usr/local/lib/node_modules /opt/yarn-* \
     && rm -f /usr/local/bin/corepack /usr/local/bin/npm /usr/local/bin/npx \
       /usr/local/bin/pnpm /usr/local/bin/pnpx /usr/local/bin/yarn \
       /usr/local/bin/yarnpkg
