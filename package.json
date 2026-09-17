@@ -2,7 +2,7 @@
   "name": "staff-aws-platform-blueprint",
   "version": "0.1.0",
   "private": true,
-  "description": "Dependency-light HTTP API for an AWS ECS Fargate platform blueprint",
+  "description": "Locally validated project tracker application contract for an AWS platform blueprint",
   "type": "module",
   "engines": {
     "node": "24.18.0",
@@ -11,17 +11,28 @@
   "packageManager": "npm@11.16.0",
   "scripts": {
     "build": "tsc",
-    "docs:check": "markdownlint-cli2 \"**/*.md\" \"#node_modules\"",
+    "db:migrate": "npm run build && node dist/db/migrate.js",
+    "docs:check": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#frontend/node_modules\"",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "start": "node dist/src/index.js",
-    "test": "npm run build && node --test dist/test/*.test.js",
+    "test": "npm run build && node --test dist/test/config.test.js dist/test/server.test.js",
+    "test:integration": "npm run build && node --test dist/test/integration.test.js",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:lint": "npm --prefix frontend run lint",
+    "frontend:test": "npm --prefix frontend run test",
+    "frontend:typecheck": "npm --prefix frontend run typecheck",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
     "@types/node": "24.13.3",
+    "@types/pg": "8.16.0",
     "markdownlint-cli2": "0.23.2",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "2.2.1",
+    "pg": "8.23.0"
   }
 }

@@ -5,11 +5,13 @@ const environments = ["development", "test", "production"] as const;
 type Environment = (typeof environments)[number];
 
 export interface AppConfig {
+  databaseUrl: string;
   environment: Environment;
   host: string;
   logLevel: LogLevel;
   port: number;
   shutdownTimeoutMs: number;
+  sessionTtlHours: number;
 }
 
 function parseInteger(
@@ -54,6 +56,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   return {
+    databaseUrl:
+      env.DATABASE_URL ??
+      (() => {
+        throw new Error("DATABASE_URL is required");
+      })(),
     environment: parseEnum("NODE_ENV", env.NODE_ENV, "development", environments),
     host,
     logLevel: parseEnum("LOG_LEVEL", env.LOG_LEVEL, "info", logLevels),
@@ -64,6 +71,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       10_000,
       1_000,
       60_000,
+    ),
+    sessionTtlHours: parseInteger(
+      "SESSION_TTL_HOURS",
+      env.SESSION_TTL_HOURS,
+      24,
+      1,
+      720,
     ),
   };
 }
