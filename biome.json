@@ -5,6 +5,7 @@
       "**",
       "!.artifacts",
       "!dist",
+      "!frontend/dist",
       "!node_modules",
       "!infra/terraform/.terraform",
       "!infra/bootstrap/.terraform"

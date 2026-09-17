@@ -52,6 +52,15 @@ GET /ready
 GET /api/v1/greeting?name=Ada
 ```
 
+## P2 application contract
+
+P1 delivered architecture and gap analysis. P2 adds a locally validated
+PostgreSQL-backed project tracker with session authentication and a minimal
+React client. Start the database with `make db-up db-migrate`; see
+[the P2 application baseline](docs/p2-application-baseline.md). It does not yet
+demonstrate private ECS, RDS, Secrets Manager, VPC endpoints, TLS origin, live
+deployment, or AWS smoke tests.
+
 Terraform stays safe by default:
 
 ```bash
