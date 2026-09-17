@@ -49,7 +49,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://app:app@127.0.0.1:5432/tracker
         run: |
-          make db-migrate lint typecheck test test-integration docs-check workflow-lint
+          make db-migrate lint typecheck test docs-check workflow-lint
+          npm run test:integration
           npm run frontend:lint
           npm run frontend:typecheck
           npm run frontend:test
