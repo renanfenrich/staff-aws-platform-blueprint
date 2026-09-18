@@ -132,6 +132,9 @@ run "enabled_sandbox_runtime" {
       module.network[0].test_contract.interface_endpoints.ecr_api.private_dns_enabled &&
       module.network[0].test_contract.interface_endpoints.ecr_dkr.private_dns_enabled &&
       module.network[0].test_contract.interface_endpoints.logs.private_dns_enabled &&
+      module.network[0].test_contract.interface_endpoints.ecr_api.service_name == "com.amazonaws.us-east-1.ecr.api" &&
+      module.network[0].test_contract.interface_endpoints.ecr_dkr.service_name == "com.amazonaws.us-east-1.ecr.dkr" &&
+      module.network[0].test_contract.interface_endpoints.logs.service_name == "com.amazonaws.us-east-1.logs" &&
       toset(module.network[0].test_contract.interface_endpoints.ecr_api.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
       toset(module.network[0].test_contract.interface_endpoints.ecr_dkr.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
       toset(module.network[0].test_contract.interface_endpoints.logs.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
@@ -145,6 +148,11 @@ run "enabled_sandbox_runtime" {
   assert {
     condition     = toset(module.network[0].test_contract.s3_route_table_ids) == toset(module.network[0].test_contract.application_route_table_ids)
     error_message = "The S3 gateway endpoint must be associated only with application route tables."
+  }
+
+  assert {
+    condition     = module.network[0].test_contract.s3_service_name == "com.amazonaws.us-east-1.s3"
+    error_message = "The commercial S3 gateway endpoint must use its commercial service name."
   }
 
   assert {
@@ -329,6 +337,52 @@ run "reject_repository_partition_mismatch" {
   }
 
   expect_failures = [check.external_ecr_repository_identity]
+}
+
+run "accept_govcloud_endpoint_names" {
+  command = apply
+
+  variables {
+    availability_zones = ["us-gov-west-1a", "us-gov-west-1b"]
+    aws_region         = "us-gov-west-1"
+    container_image    = "111122223333.dkr.ecr.us-gov-west-1.amazonaws.com/fixture@sha256:0000000000000000000000000000000000000000000000000000000000000001"
+    deployment_enabled = true
+    ecr_repository_arn = "arn:aws-us-gov:ecr:us-gov-west-1:111122223333:repository/fixture"
+    ecr_repository_url = "111122223333.dkr.ecr.us-gov-west-1.amazonaws.com/fixture"
+  }
+
+  assert {
+    condition = (
+      module.network[0].test_contract.interface_endpoints.ecr_api.service_name == "com.amazonaws.us-gov-west-1.ecr.api" &&
+      module.network[0].test_contract.interface_endpoints.ecr_dkr.service_name == "com.amazonaws.us-gov-west-1.ecr.dkr" &&
+      module.network[0].test_contract.interface_endpoints.logs.service_name == "com.amazonaws.us-gov-west-1.logs" &&
+      module.network[0].test_contract.s3_service_name == "com.amazonaws.us-gov-west-1.s3"
+    )
+    error_message = "GovCloud endpoint service names must retain the commercial prefix."
+  }
+}
+
+run "accept_china_endpoint_names" {
+  command = apply
+
+  variables {
+    availability_zones = ["cn-north-1a", "cn-north-1b"]
+    aws_region         = "cn-north-1"
+    container_image    = "111122223333.dkr.ecr.cn-north-1.amazonaws.com.cn/fixture@sha256:0000000000000000000000000000000000000000000000000000000000000001"
+    deployment_enabled = true
+    ecr_repository_arn = "arn:aws-cn:ecr:cn-north-1:111122223333:repository/fixture"
+    ecr_repository_url = "111122223333.dkr.ecr.cn-north-1.amazonaws.com.cn/fixture"
+  }
+
+  assert {
+    condition = (
+      module.network[0].test_contract.interface_endpoints.ecr_api.service_name == "cn.com.amazonaws.cn-north-1.ecr.api" &&
+      module.network[0].test_contract.interface_endpoints.ecr_dkr.service_name == "cn.com.amazonaws.cn-north-1.ecr.dkr" &&
+      module.network[0].test_contract.interface_endpoints.logs.service_name == "com.amazonaws.cn-north-1.logs" &&
+      module.network[0].test_contract.s3_service_name == "cn.com.amazonaws.cn-north-1.s3"
+    )
+    error_message = "China endpoints must use China ECR and S3 names while Logs retains its service name."
+  }
 }
 
 run "reject_invalid_fargate_size" {

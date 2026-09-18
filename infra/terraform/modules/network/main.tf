@@ -1,11 +1,14 @@
 locals {
   public_subnets      = zipmap(var.availability_zones, var.public_subnet_cidrs)
   application_subnets = zipmap(var.availability_zones, var.application_subnet_cidrs)
+  aws_partition       = startswith(var.aws_region, "cn-") ? "aws-cn" : startswith(var.aws_region, "us-gov-") ? "aws-us-gov" : "aws"
+  endpoint_prefix     = local.aws_partition == "aws-cn" ? "cn.com.amazonaws" : "com.amazonaws"
   interface_services = {
-    ecr_api = "ecr.api"
-    ecr_dkr = "ecr.dkr"
-    logs    = "logs"
+    ecr_api = "${local.endpoint_prefix}.${var.aws_region}.ecr.api"
+    ecr_dkr = "${local.endpoint_prefix}.${var.aws_region}.ecr.dkr"
+    logs    = "com.amazonaws.${var.aws_region}.logs"
   }
+  s3_endpoint_service = "${local.endpoint_prefix}.${var.aws_region}.s3"
 }
 
 resource "aws_vpc" "this" {
@@ -225,7 +228,7 @@ resource "aws_vpc_endpoint" "interface" {
   private_dns_enabled = true
   region              = var.aws_region
   security_group_ids  = [aws_security_group.endpoint.id]
-  service_name        = "com.amazonaws.${var.aws_region}.${each.value}"
+  service_name        = each.value
   subnet_ids          = [for zone in var.availability_zones : aws_subnet.application[zone].id]
   vpc_endpoint_type   = "Interface"
   vpc_id              = aws_vpc.this.id
@@ -236,7 +239,7 @@ resource "aws_vpc_endpoint" "interface" {
 resource "aws_vpc_endpoint" "s3" {
   region            = var.aws_region
   route_table_ids   = [for zone in var.availability_zones : aws_route_table.application[zone].id]
-  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  service_name      = local.s3_endpoint_service
   vpc_endpoint_type = "Gateway"
   vpc_id            = aws_vpc.this.id
 

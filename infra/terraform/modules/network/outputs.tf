@@ -45,6 +45,7 @@ output "test_contract" {
       for service, endpoint in aws_vpc_endpoint.interface : service => {
         private_dns_enabled = endpoint.private_dns_enabled
         security_group_ids  = endpoint.security_group_ids
+        service_name        = endpoint.service_name
         subnet_ids          = endpoint.subnet_ids
       }
     }
@@ -55,6 +56,7 @@ output "test_contract" {
     resource_count           = 29
     s3_prefix_list_id        = aws_vpc_endpoint.s3.prefix_list_id
     s3_route_table_ids       = aws_vpc_endpoint.s3.route_table_ids
+    s3_service_name          = aws_vpc_endpoint.s3.service_name
     task_endpoint_egress_id  = aws_vpc_security_group_egress_rule.task_to_endpoint_https.referenced_security_group_id
     task_ingress_cidr        = aws_vpc_security_group_ingress_rule.task_from_alb.cidr_ipv4
     task_ingress_group_id    = aws_vpc_security_group_ingress_rule.task_from_alb.security_group_id

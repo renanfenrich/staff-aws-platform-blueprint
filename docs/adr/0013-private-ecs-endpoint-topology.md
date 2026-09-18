@@ -16,6 +16,9 @@ subnets with `assign_public_ip = false`, one per configured Availability Zone.
 Each application subnet receives its own route table with no default route.
 Use private-DNS interface endpoints for ECR API, ECR DKR, and CloudWatch Logs,
 plus an S3 gateway endpoint associated only with application route tables.
+Endpoint names are derived from the configured region: China ECR and S3 use
+the `cn.com.amazonaws` prefix, while commercial AWS and GovCloud use
+`com.amazonaws`; Logs uses `com.amazonaws` in every supported partition.
 
 Task TCP/443 egress references the endpoint security group and the S3 managed
 prefix list. DNS remains restricted to the VPC resolver. The endpoint SG
