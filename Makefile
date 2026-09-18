@@ -37,7 +37,7 @@ test-integration: db-up db-migrate
 
 run: ## Build and run the API locally
 	npm run build
-	npm start
+	node --env-file=.env dist/src/index.js
 
 lint: ## Check source and configuration formatting and lint rules
 	npm run lint

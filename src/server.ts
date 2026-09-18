@@ -71,6 +71,14 @@ function text(value: unknown, maximum: number): string | undefined {
     ? value.trim()
     : undefined;
 }
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505"
+  );
+}
 
 export function createApp(config: AppConfig, logger: Logger, database: Database): App {
   async function authenticated(request: IncomingMessage): Promise<User | undefined> {
@@ -147,8 +155,10 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
             "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)",
             [id, email, passwordHash],
           );
-        } catch {
-          return send(response, 409, { error: "email_exists", requestId });
+        } catch (error) {
+          if (isUniqueViolation(error))
+            return send(response, 409, { error: "email_exists", requestId });
+          throw error;
         }
         await issueSession(response, id);
         return send(response, 201, { user: { id, email } });
@@ -201,15 +211,15 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
         );
         return send(response, 201, { project: result.rows[0] ?? null });
       }
-      const projectMatch = /^\/api\/projects\/([^/]+)(?:\/tasks(?:\/([^/]+))?)?$/.exec(
+      const projectDetailMatch = /^\/api\/projects\/([^/]+)$/.exec(url.pathname);
+      const taskMatch = /^\/api\/projects\/([^/]+)\/tasks(?:\/([^/]+))?$/.exec(
         url.pathname,
       );
-      if (!projectMatch) return send(response, 404, { error: "not_found", requestId });
-      const projectId = projectMatch[1];
-      const taskId = projectMatch[2];
+      const projectId = projectDetailMatch?.[1] ?? taskMatch?.[1];
+      const taskId = taskMatch?.[2];
       if (!projectId || !isUuid(projectId))
         return send(response, 404, { error: "not_found", requestId });
-      if (!taskId && method === "GET") {
+      if (projectDetailMatch && method === "GET") {
         const project = await database.query(
           "SELECT id, name, created_at, updated_at FROM projects WHERE id = $1 AND owner_user_id = $2",
           [projectId, user.id],
@@ -224,14 +234,14 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
       );
       if (!project.rows[0])
         return send(response, 404, { error: "not_found", requestId });
-      if (!taskId && method === "GET") {
+      if (taskMatch && !taskId && method === "GET") {
         const tasks = await database.query(
           "SELECT id, title, status, created_at, updated_at FROM tasks WHERE project_id = $1 ORDER BY created_at",
           [projectId],
         );
         return send(response, 200, { tasks: tasks.rows });
       }
-      if (!taskId && method === "POST") {
+      if (taskMatch && !taskId && method === "POST") {
         const title = text((await body(request))?.title, 240);
         if (!title) return send(response, 400, { error: "invalid_input", requestId });
         const id = randomUUID();
@@ -241,7 +251,7 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
         );
         return send(response, 201, { task: task.rows[0] ?? null });
       }
-      if (taskId && method === "PATCH") {
+      if (taskMatch && taskId && method === "PATCH") {
         if (!isUuid(taskId))
           return send(response, 404, { error: "not_found", requestId });
         const status = (await body(request))?.status;

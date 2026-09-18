@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { migrate } from "../db/migrate.js";
 import { loadConfig } from "../src/config.js";
 import { createDatabase } from "../src/database.js";
 import { createLogger } from "../src/logger.js";
@@ -93,6 +95,9 @@ test("registration, sessions, projects, and tasks enforce ownership", async () =
   );
   assert.equal(taskResponse.status, 201);
   const task = ((await taskResponse.json()) as { task: { id: string } }).task;
+  const taskListResponse = await request(`/api/projects/${project.id}/tasks`, {}, a);
+  assert.equal(taskListResponse.status, 200);
+  assert.deepEqual(await taskListResponse.json(), { tasks: [task] });
   const bRegistration = await request("/api/auth/register", {
     method: "POST",
     body: JSON.stringify({ email: "b@example.com", password: "password-long-B" }),
@@ -149,4 +154,37 @@ test("migrations are recorded and structural database constraints apply", async 
       "INSERT INTO users (id, email, password_hash) VALUES ('00000000-0000-4000-8000-000000000001', 'UPPER@example.com', 'x')",
     ),
   );
+});
+
+test("migration runner skips applied migrations and retains checksum protection", async () => {
+  const before = await database.query<{ applied_at: string }>(
+    "SELECT applied_at FROM schema_migrations WHERE id = $1",
+    ["001_initial.sql"],
+  );
+  await migrate(databaseUrl);
+  const after = await database.query<{ id: string; applied_at: string }>(
+    "SELECT id, applied_at FROM schema_migrations ORDER BY id",
+  );
+  assert.deepEqual(
+    after.rows.map((row) => row.id),
+    ["001_initial.sql"],
+  );
+  assert.equal(after.rows[0]?.applied_at, before.rows[0]?.applied_at);
+
+  const checksum = createHash("sha256")
+    .update(
+      await (await import("node:fs/promises")).readFile(
+        "db/migrations/001_initial.sql",
+      ),
+    )
+    .digest("hex");
+  await database.query(
+    "UPDATE schema_migrations SET checksum = 'changed' WHERE id = $1",
+    ["001_initial.sql"],
+  );
+  await assert.rejects(() => migrate(databaseUrl), /Migration checksum mismatch/);
+  await database.query("UPDATE schema_migrations SET checksum = $1 WHERE id = $2", [
+    checksum,
+    "001_initial.sql",
+  ]);
 });
