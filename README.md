@@ -39,18 +39,31 @@ Requirements: Node.js `24.18.0`, npm `11.16.0`, Terraform `1.15.8`, Docker, and
 GNU Make.
 
 ```bash
+cp .env.example .env
 make setup
-make validate
+make db-up
+make db-migrate
 make run
+npm --prefix frontend run dev
 ```
 
-The API listens on `http://localhost:8080`:
+`make setup` installs dependencies and initializes Terraform only; it does not
+create or migrate a database. Set the local password in `.env` before starting
+PostgreSQL. The API listens on `http://localhost:8080`:
 
 ```text
 GET /health
 GET /ready
-GET /api/v1/greeting?name=Ada
 ```
+
+## P2 application contract
+
+P1 delivered architecture and gap analysis. P2 adds a locally validated
+PostgreSQL-backed project tracker with session authentication and a minimal
+React client. The `make run` local workflow loads the untracked `.env`; see
+[the P2 application baseline](docs/p2-application-baseline.md). It does not yet
+demonstrate private ECS, RDS, Secrets Manager, VPC endpoints, TLS origin, live
+deployment, or AWS smoke tests.
 
 Terraform stays safe by default:
 

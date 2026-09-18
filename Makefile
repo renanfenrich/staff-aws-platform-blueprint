@@ -4,7 +4,7 @@ BOOTSTRAP_DIR := infra/bootstrap
 IMAGE := staff-aws-platform-blueprint-api:local
 IMAGE_EVIDENCE_DIR := .artifacts/image
 
-.PHONY: help setup run lint typecheck test security container docs-check workflow-lint \
+.PHONY: help setup run lint typecheck test test-integration db-up db-migrate db-reset db-down security container docs-check workflow-lint \
 	aws-foundation-check bootstrap-init bootstrap-format-check bootstrap-validate \
 	bootstrap-init-local bootstrap-init-remote bootstrap-state-migration-check \
 	bootstrap-plan-disabled bootstrap-test tf-init tf-init-local tf-init-remote \
@@ -16,11 +16,28 @@ help:
 
 setup: ## Install pinned dependencies and initialize Terraform
 	npm ci
+	npm --prefix frontend ci
 	$(MAKE) tf-init
+
+db-up:
+	docker compose up -d --wait postgres
+
+db-migrate:
+	@set -a; test ! -f .env || . ./.env; test -n "$$DATABASE_URL"; npm run db:migrate
+
+db-reset:
+	docker compose down -v
+	$(MAKE) db-up db-migrate
+
+db-down:
+	docker compose down
+
+test-integration: db-up db-migrate
+	@set -a; test ! -f .env || . ./.env; test -n "$$DATABASE_URL"; npm run test:integration
 
 run: ## Build and run the API locally
 	npm run build
-	npm start
+	node --env-file=.env dist/src/index.js
 
 lint: ## Check source and configuration formatting and lint rules
 	npm run lint

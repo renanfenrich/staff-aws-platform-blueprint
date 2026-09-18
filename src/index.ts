@@ -1,12 +1,13 @@
 import { once } from "node:events";
 import { loadConfig } from "./config.js";
+import { createDatabase } from "./database.js";
 import { createLogger } from "./logger.js";
 import { createApp } from "./server.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
-  const app = createApp(config, logger);
+  const app = createApp(config, logger, createDatabase(config.databaseUrl));
   let shuttingDown = false;
 
   async function shutdown(signal: NodeJS.Signals): Promise<void> {
@@ -15,7 +16,6 @@ async function main(): Promise<void> {
     }
 
     shuttingDown = true;
-    app.setReady(false);
     logger.info("server.shutdown_started", { signal });
 
     const closed = once(app.server, "close");
@@ -31,6 +31,7 @@ async function main(): Promise<void> {
     timeout.unref();
 
     await closed;
+    await app.close();
     clearTimeout(timeout);
     logger.info("server.shutdown_complete");
   }
@@ -43,7 +44,6 @@ async function main(): Promise<void> {
 
   app.server.listen(config.port, config.host);
   await once(app.server, "listening");
-  app.setReady(true);
   logger.info("server.started", {
     environment: config.environment,
     host: config.host,
