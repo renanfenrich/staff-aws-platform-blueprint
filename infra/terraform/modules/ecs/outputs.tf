@@ -14,5 +14,7 @@ output "test_contract" {
     desired_count            = aws_ecs_service.application.desired_count
     mandatory_tags           = aws_ecs_cluster.this.tags
     resource_count           = 3
+    assign_public_ip         = aws_ecs_service.application.network_configuration[0].assign_public_ip
+    subnet_ids               = aws_ecs_service.application.network_configuration[0].subnets
   }
 }

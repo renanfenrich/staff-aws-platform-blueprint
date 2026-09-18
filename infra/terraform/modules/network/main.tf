@@ -1,5 +1,11 @@
 locals {
-  subnets = zipmap(var.availability_zones, var.public_subnet_cidrs)
+  public_subnets      = zipmap(var.availability_zones, var.public_subnet_cidrs)
+  application_subnets = zipmap(var.availability_zones, var.application_subnet_cidrs)
+  interface_services = {
+    ecr_api = "ecr.api"
+    ecr_dkr = "ecr.dkr"
+    logs    = "logs"
+  }
 }
 
 resource "aws_vpc" "this" {
@@ -12,7 +18,7 @@ resource "aws_vpc" "this" {
 }
 
 resource "aws_subnet" "public" {
-  for_each = local.subnets
+  for_each = local.public_subnets
 
   availability_zone = each.key
   cidr_block        = each.value
@@ -22,6 +28,21 @@ resource "aws_subnet" "public" {
   tags = merge(var.tags, {
     Name    = "${var.name}-public-${each.key}"
     Network = "public"
+  })
+}
+
+resource "aws_subnet" "application" {
+  for_each = local.application_subnets
+
+  availability_zone       = each.key
+  cidr_block              = each.value
+  map_public_ip_on_launch = false
+  region                  = var.aws_region
+  vpc_id                  = aws_vpc.this.id
+
+  tags = merge(var.tags, {
+    Name    = "${var.name}-application-${each.key}"
+    Network = "application"
   })
 }
 
@@ -54,6 +75,23 @@ resource "aws_route_table_association" "public" {
   subnet_id      = each.value.id
 }
 
+resource "aws_route_table" "application" {
+  for_each = aws_subnet.application
+
+  region = var.aws_region
+  vpc_id = aws_vpc.this.id
+
+  tags = merge(var.tags, { Name = "${var.name}-application-${each.key}" })
+}
+
+resource "aws_route_table_association" "application" {
+  for_each = aws_subnet.application
+
+  region         = var.aws_region
+  route_table_id = aws_route_table.application[each.key].id
+  subnet_id      = each.value.id
+}
+
 resource "aws_security_group" "alb" {
   description            = "Sandbox ALB ingress and task-only egress"
   name                   = "${var.name}-alb"
@@ -65,13 +103,24 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "task" {
-  description            = "Fargate task ingress from ALB and restricted public egress"
+  description            = "Fargate task ingress from ALB and private AWS service egress"
   name                   = "${var.name}-task"
   region                 = var.aws_region
   revoke_rules_on_delete = true
   vpc_id                 = aws_vpc.this.id
 
   tags = merge(var.tags, { Name = "${var.name}-task" })
+}
+
+resource "aws_security_group" "endpoint" {
+  description            = "Private interface endpoint ingress from Fargate tasks only"
+  egress                 = []
+  name                   = "${var.name}-endpoint"
+  region                 = var.aws_region
+  revoke_rules_on_delete = true
+  vpc_id                 = aws_vpc.this.id
+
+  tags = merge(var.tags, { Name = "${var.name}-endpoint" })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
@@ -110,16 +159,28 @@ resource "aws_vpc_security_group_ingress_rule" "task_from_alb" {
   tags = merge(var.tags, { Name = "${var.name}-task-from-alb" })
 }
 
-resource "aws_vpc_security_group_egress_rule" "task_https" {
-  cidr_ipv4         = "0.0.0.0/0"
-  description       = "HTTPS to ECR, CloudWatch Logs, and public AWS endpoints"
+resource "aws_vpc_security_group_egress_rule" "task_to_endpoint_https" {
+  description                  = "HTTPS to private ECR and CloudWatch Logs endpoints"
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  region                       = var.aws_region
+  referenced_security_group_id = aws_security_group.endpoint.id
+  security_group_id            = aws_security_group.task.id
+  to_port                      = 443
+
+  tags = merge(var.tags, { Name = "${var.name}-task-to-endpoint-https" })
+}
+
+resource "aws_vpc_security_group_egress_rule" "task_to_s3_https" {
+  description       = "HTTPS to the S3 gateway endpoint prefix list"
   from_port         = 443
   ip_protocol       = "tcp"
+  prefix_list_id    = aws_vpc_endpoint.s3.prefix_list_id
   region            = var.aws_region
   security_group_id = aws_security_group.task.id
   to_port           = 443
 
-  tags = merge(var.tags, { Name = "${var.name}-task-https" })
+  tags = merge(var.tags, { Name = "${var.name}-task-to-s3-https" })
 }
 
 resource "aws_vpc_security_group_egress_rule" "task_dns_udp" {
@@ -144,4 +205,40 @@ resource "aws_vpc_security_group_egress_rule" "task_dns_tcp" {
   to_port           = 53
 
   tags = merge(var.tags, { Name = "${var.name}-task-dns-tcp" })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "endpoint_from_task_https" {
+  description                  = "HTTPS from Fargate tasks only"
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  region                       = var.aws_region
+  referenced_security_group_id = aws_security_group.task.id
+  security_group_id            = aws_security_group.endpoint.id
+  to_port                      = 443
+
+  tags = merge(var.tags, { Name = "${var.name}-endpoint-from-task-https" })
+}
+
+resource "aws_vpc_endpoint" "interface" {
+  for_each = local.interface_services
+
+  private_dns_enabled = true
+  region              = var.aws_region
+  security_group_ids  = [aws_security_group.endpoint.id]
+  service_name        = "com.amazonaws.${var.aws_region}.${each.value}"
+  subnet_ids          = [for zone in var.availability_zones : aws_subnet.application[zone].id]
+  vpc_endpoint_type   = "Interface"
+  vpc_id              = aws_vpc.this.id
+
+  tags = merge(var.tags, { Name = "${var.name}-${replace(each.key, "_", "-")}-endpoint" })
+}
+
+resource "aws_vpc_endpoint" "s3" {
+  region            = var.aws_region
+  route_table_ids   = [for zone in var.availability_zones : aws_route_table.application[zone].id]
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  vpc_id            = aws_vpc.this.id
+
+  tags = merge(var.tags, { Name = "${var.name}-s3-endpoint" })
 }

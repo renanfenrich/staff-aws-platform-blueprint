@@ -54,6 +54,9 @@ run "disabled_mode_has_no_resources" {
     condition = (
       output.vpc_id == null &&
       output.public_subnet_ids == [] &&
+      output.application_subnet_ids == [] &&
+      output.interface_endpoint_ids == [] &&
+      output.endpoint_security_group_id == null &&
       output.ecr_repository_url == null &&
       output.ecs_cluster_name == null &&
       output.ecs_service_name == null &&
@@ -77,6 +80,13 @@ run "enabled_sandbox_runtime" {
   }
 
   override_resource {
+    target = module.network[0].aws_security_group.endpoint
+    values = {
+      id = "sg-33333333"
+    }
+  }
+
+  override_resource {
     target = module.network[0].aws_security_group.task
     values = {
       id = "sg-22222222"
@@ -91,8 +101,59 @@ run "enabled_sandbox_runtime" {
   }
 
   assert {
-    condition     = toset(module.network[0].test_contract.subnet_zones) == toset(["us-east-1a", "us-east-1b"])
-    error_message = "Enabled sandbox must use two distinct Availability Zones."
+    condition = (
+      length(module.network[0].test_contract.public_subnet_ids) == 2 &&
+      length(module.network[0].test_contract.application_subnet_ids) == 2 &&
+      toset(module.network[0].test_contract.public_subnet_zones) == toset(["us-east-1a", "us-east-1b"]) &&
+      toset(module.network[0].test_contract.application_subnet_zones) == toset(["us-east-1a", "us-east-1b"])
+    )
+    error_message = "ALB and ECS placement must each span the two configured Availability Zones."
+  }
+
+  assert {
+    condition = (
+      module.ecs[0].test_contract.assign_public_ip == false &&
+      toset(module.ecs[0].test_contract.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
+      toset(module.alb[0].test_contract.subnet_ids) == toset(module.network[0].test_contract.public_subnet_ids)
+    )
+    error_message = "ECS must use private application subnets without public IPs while the ALB stays public."
+  }
+
+  assert {
+    condition = (
+      module.network[0].test_contract.application_default_route_count == 0 &&
+      module.network[0].test_contract.interface_endpoint_count == 3
+    )
+    error_message = "Application route tables must have no internet default route and P3 must have exactly three interface endpoints."
+  }
+
+  assert {
+    condition = (
+      module.network[0].test_contract.interface_endpoints.ecr_api.private_dns_enabled &&
+      module.network[0].test_contract.interface_endpoints.ecr_dkr.private_dns_enabled &&
+      module.network[0].test_contract.interface_endpoints.logs.private_dns_enabled &&
+      toset(module.network[0].test_contract.interface_endpoints.ecr_api.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
+      toset(module.network[0].test_contract.interface_endpoints.ecr_dkr.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
+      toset(module.network[0].test_contract.interface_endpoints.logs.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
+      toset(module.network[0].test_contract.interface_endpoints.ecr_api.security_group_ids) == toset([module.network[0].test_contract.endpoint_security_group_id]) &&
+      toset(module.network[0].test_contract.interface_endpoints.ecr_dkr.security_group_ids) == toset([module.network[0].test_contract.endpoint_security_group_id]) &&
+      toset(module.network[0].test_contract.interface_endpoints.logs.security_group_ids) == toset([module.network[0].test_contract.endpoint_security_group_id])
+    )
+    error_message = "P3 interface endpoints must be private ECR API, ECR DKR, and Logs paths only."
+  }
+
+  assert {
+    condition     = toset(module.network[0].test_contract.s3_route_table_ids) == toset(module.network[0].test_contract.application_route_table_ids)
+    error_message = "The S3 gateway endpoint must be associated only with application route tables."
+  }
+
+  assert {
+    condition = (
+      module.network[0].test_contract.task_endpoint_egress_id == module.network[0].test_contract.endpoint_security_group_id &&
+      module.network[0].test_contract.endpoint_ingress_source_id == module.network[0].test_contract.task_security_group_id &&
+      module.network[0].test_contract.task_s3_prefix_list_id == module.network[0].test_contract.s3_prefix_list_id
+    )
+    error_message = "Task HTTPS egress must use only the endpoint SG and S3 prefix list."
   }
 
   assert {
@@ -199,9 +260,9 @@ run "enabled_sandbox_runtime" {
       module.iam[0].test_contract.resource_count +
       module.alb[0].test_contract.resource_count +
       module.ecs[0].test_contract.resource_count +
-      module.observability[0].test_contract.resource_count == 26
+      module.observability[0].test_contract.resource_count == 39
     )
-    error_message = "Enabled runtime must consume the external repository and manage exactly 26 resources."
+    error_message = "Enabled P3 runtime must consume the external repository and manage exactly 39 resources."
   }
 }
 
@@ -270,16 +331,6 @@ run "reject_repository_partition_mismatch" {
   expect_failures = [check.external_ecr_repository_identity]
 }
 
-run "reject_production_public_tasks" {
-  command = plan
-
-  variables {
-    environment = "production"
-  }
-
-  expect_failures = [var.network_profile]
-}
-
 run "reject_invalid_fargate_size" {
   command = plan
 
@@ -299,4 +350,34 @@ run "reject_overlapping_subnets" {
   }
 
   expect_failures = [var.public_subnet_cidrs]
+}
+
+run "reject_duplicate_application_subnets" {
+  command = plan
+
+  variables {
+    application_subnet_cidrs = ["10.42.10.0/24", "10.42.10.0/24"]
+  }
+
+  expect_failures = [var.application_subnet_cidrs]
+}
+
+run "reject_application_subnet_outside_vpc" {
+  command = plan
+
+  variables {
+    application_subnet_cidrs = ["10.43.10.0/24", "10.43.11.0/24"]
+  }
+
+  expect_failures = [var.application_subnet_cidrs]
+}
+
+run "reject_application_public_subnet_collision" {
+  command = plan
+
+  variables {
+    application_subnet_cidrs = ["10.42.0.0/24", "10.42.11.0/24"]
+  }
+
+  expect_failures = [var.application_subnet_cidrs]
 }

@@ -33,6 +33,21 @@ output "public_subnet_ids" {
   value       = try(module.network[0].public_subnet_ids, [])
 }
 
+output "application_subnet_ids" {
+  description = "Private application subnet IDs, or an empty list when disabled."
+  value       = try(module.network[0].application_subnet_ids, [])
+}
+
+output "interface_endpoint_ids" {
+  description = "Interface VPC endpoint IDs, or an empty list when disabled."
+  value       = try(module.network[0].interface_endpoint_ids, [])
+}
+
+output "endpoint_security_group_id" {
+  description = "Interface endpoint security group ID, or null when disabled."
+  value       = try(module.network[0].endpoint_security_group_id, null)
+}
+
 output "task_execution_role_arn" {
   description = "ECS task execution role ARN, or null when deployment is disabled."
   value       = try(module.iam[0].execution_role_arn, null)

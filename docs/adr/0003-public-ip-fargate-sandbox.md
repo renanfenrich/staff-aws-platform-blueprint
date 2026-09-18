@@ -1,6 +1,6 @@
 # ADR 0003: Use public-IP Fargate tasks in the disposable sandbox
 
-- Status: Accepted
+- Status: Superseded by ADR 0013
 - Date: 2026-07-27
 
 ## Context

@@ -129,7 +129,7 @@ files in `always()` cleanup without modifying the hosted runner's default Docker
 configuration. It does not wait for asynchronous ECR Basic findings or run
 Terraform or ECS commands.
 
-## Implemented sandbox architecture
+## Implemented P3 network architecture
 
 ```mermaid
 flowchart LR
@@ -137,30 +137,31 @@ flowchart LR
   ALBSG --> ALB[Application Load Balancer]
   ALB -->|TCP 8080| TaskSG[Task security group]
   TaskSG --> Task[ECS Fargate task]
-  Task -->|HTTPS| ECR[Amazon ECR and image layers]
-  Task -->|HTTPS| Logs[CloudWatch Logs]
+  Task -->|HTTPS| VPCE[Private ECR and Logs endpoints]
+  Task -->|HTTPS| S3[S3 gateway endpoint]
 
   subgraph VPC[VPC in two Availability Zones]
     ALB
-    Task
+    Task[Private application subnets]
   end
 ```
 
-The VPC has DNS support and hostnames, two `/24` public subnets in distinct
-Availability Zones, one internet gateway, one public route table, one default
-IPv4 route, and an association for each subnet. There is no NAT gateway. ECS
-assigns each sandbox task a public IPv4 address for outbound traffic; subnet
-automatic public-address assignment remains disabled.
+The VPC has DNS support and hostnames, two `/24` public ALB subnets and two
+`/24` private application subnets in distinct Availability Zones. Public
+subnets use the internet gateway default route. Each application subnet has its
+own route table with no default route and is associated with the S3 gateway
+endpoint. There is no NAT gateway. ECS tasks are private and never receive a
+public IPv4 address.
 
 ## Resource inventory
 
-With `deployment_enabled=true`, runtime Terraform represents 26 resource
+With `deployment_enabled=true`, runtime Terraform represents 39 resource
 instances:
 
 | Boundary | Resources |
 | --- | --- |
-| Network | 1 VPC, 2 public subnets, 1 internet gateway, 1 route table, 1 default route, 2 route-table associations |
-| Network security | 2 security groups and 6 standalone ingress or egress rules |
+| Network | 1 VPC, 2 public subnets, 2 application subnets, 1 internet gateway, 3 route tables, 1 public default route, 4 route-table associations, 3 interface endpoints, and 1 S3 gateway endpoint |
+| Network security | 3 security groups and 8 standalone ingress or egress rules |
 | Runtime IAM | 2 roles and 1 inline execution policy |
 | Entry point | 1 ALB, 1 IP target group, and 1 HTTP listener |
 | Compute | 1 ECS cluster, 1 Fargate task definition, and 1 ECS service |
@@ -194,8 +195,8 @@ ECS agent using the task execution role
 -> ecr:GetAuthorizationToken on Resource "*"
 -> BatchCheckLayerAvailability, GetDownloadUrlForLayer, and BatchGetImage
    on the project ECR repository
--> task ENI TCP/443 through its public IPv4 address and internet gateway
--> ECR and signed image-layer endpoints
+-> task ENI TCP/443 to private ECR API/DKR interface endpoints and the S3
+   gateway endpoint prefix list
 ```
 
 `ecr:GetAuthorizationToken` cannot be resource-scoped by AWS. All repository
@@ -218,9 +219,9 @@ to seven days, and the log group is disposable with the sandbox.
 - The internet crosses only the sandbox ALB on TCP port 80.
 - ALB egress is only TCP port 8080 to the task security group.
 - Task ingress is only TCP port 8080 from the ALB security group.
-- Task egress is TCP port 443 to public endpoints and TCP or UDP port 53 to the
-  VPC resolver. Public HTTPS egress is the documented exception required by the
-  no-NAT sandbox.
+- Task egress is TCP port 443 only to the interface endpoint SG and S3 managed
+  prefix list, plus TCP or UDP port 53 to the VPC resolver. The endpoint SG
+  accepts TCP port 443 only from the task SG and has no broad egress rule.
 - Both ECS roles trust only `ecs-tasks.amazonaws.com`.
 - The task execution role has only ECR-pull and log-delivery actions.
 - The image-publisher role is separate from state and runtime identities. Its
@@ -249,28 +250,30 @@ The enabled sandbox cost equation is:
 
 ```text
 Fargate vCPU-seconds + Fargate GB-seconds
-+ ALB-hours + LCUs + public IPv4
++ ALB-hours + LCUs + interface endpoint per-AZ hours and data processing
 + ECR storage and requests + CloudWatch log ingestion and storage
 + data transfer
 ```
 
 The one-task 0.25-vCPU/0.5-GiB defaults and seven-day log retention reduce cost.
-The ALB and public IPv4 addresses still have standing charges while deployed.
+The ALB and interface endpoints have standing charges while deployed. The S3
+gateway endpoint has no hourly endpoint charge.
 The bootstrap-owned ECR lifecycle retains at most 30 `git-` subject images.
 Repository force deletion is disabled and accidental destroy is blocked.
 Attestations and SBOMs add storage cost; lifecycle preview is required before
 the first apply.
 
-NAT gateways are deferred because their hourly and per-GB charges are poor
-defaults for a disposable exercise. The task HTTPS rule is consequently broad
-by destination but narrow by port. Reconsider NAT versus VPC endpoints with a
-traffic and availability estimate before production.
+NAT gateways remain absent. The three interface endpoints are limited to the
+current execution path; Secrets Manager is intentionally deferred with its P4
+consumer. Endpoint policies retain AWS defaults, so IAM remains the resource
+authorization boundary.
 
 ## Deferred production architecture
 
 This sandbox is intentionally not production-ready. Production requires:
 
-- private application subnets and redundant reviewed egress;
+- private PostgreSQL and Secrets Manager delivery before the P2 application can
+  start on ECS;
 - ACM-managed TLS, DNS ownership review, HTTPS redirect, and certificate
   renewal ownership;
 - ALB access logs and a WAF and rate-control decision;
@@ -302,7 +305,7 @@ sandbox and has a time-bounded Trivy exception.
 | Shared provider deletion | External-provider reference mode | Account administrators own shared-provider availability |
 | Bootstrap state compromise | Human-only bootstrap state boundary | Local state needs careful temporary protection |
 | Workflow permission escalation | Job-level `id-token: write` only | A malicious trusted workflow change needs repository review controls |
-| Direct task compromise | No public task ingress; ALB-to-task SG reference | Public task IP still reaches approved outbound destinations |
+| Direct task compromise | No public task IP or ingress; ALB-to-task SG reference and narrow endpoint egress | Endpoint and application compromise remain possible after a future deployment |
 | First-deployment circular dependency | Registry lifecycle separated from runtime | Runtime publication and plan remain manual |
 | Malicious pull request publishes image | Manual dispatch, protected environment, and exact OIDC subject | Trusted reviewers can still approve harmful code |
 | Mutable image substitution | Immutable tags and digest-only runtime reference | Promotion has not been operationally tested |
