@@ -169,7 +169,10 @@ test("migration runner skips applied migrations and retains checksum protection"
     after.rows.map((row) => row.id),
     ["001_initial.sql"],
   );
-  assert.equal(after.rows[0]?.applied_at, before.rows[0]?.applied_at);
+  assert.equal(
+    new Date(after.rows[0]?.applied_at ?? 0).getTime(),
+    new Date(before.rows[0]?.applied_at ?? 0).getTime(),
+  );
 
   const checksum = createHash("sha256")
     .update(
