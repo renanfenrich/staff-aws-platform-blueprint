@@ -20,7 +20,7 @@ production-ready platform.
 | --- | --- |
 | API | Health, readiness, example behavior, config validation, JSON logs, graceful shutdown |
 | Container | Exact base digest, multi-stage build, non-root runtime, no runtime npm dependencies |
-| Network graph | Two-AZ public VPC, internet routing, separate ALB and task security groups |
+| Network graph | Two-AZ public ALB subnets, private ECS application subnets, no NAT, private ECR/Logs interface endpoints, S3 gateway endpoint, and separate ALB/task/endpoint security groups |
 | Runtime graph | External digest-form ECR input, ALB, ECS cluster, hardened Fargate task and service, CloudWatch logs |
 | IAM graph | ECS-only trusts, scoped execution policy, empty application role |
 | Cost safety | Default-disabled modules, zero-resource plan assertion, no NAT, bounded logs and images |
@@ -62,8 +62,8 @@ promotion, or destroy automation.
 
 ## Required before production
 
-- Replace public task placement with private application subnets and a reviewed
-  redundant NAT or VPC endpoint design.
+- Add private PostgreSQL, Secrets Manager secret delivery, and the required
+  Secrets Manager endpoint before the P2 application is deployed to ECS.
 - Require ACM TLS, owned DNS, HTTP-to-HTTPS redirect, ALB access logging, and a
   reviewed WAF and rate-control decision.
 - Set production capacity, autoscaling, circuit-breaker thresholds, log
@@ -79,11 +79,10 @@ promotion, or destroy automation.
 ## Known sandbox limitations
 
 - Traffic from the client to the ALB is plaintext HTTP.
-- Tasks use public IPv4 addresses for egress, although their security group has
-  no public ingress.
-- Task HTTPS egress allows any IPv4 destination on TCP port 443 because ECR,
-  signed layer storage, CloudWatch Logs, and other public AWS endpoint ranges
-  are not stable security-group targets.
+- P3 represents private task placement and endpoint topology, but it has not
+  been deployed or proven to pull ECR layers or deliver CloudWatch logs.
+- The P2 backend requires PostgreSQL through `DATABASE_URL`; RDS, Secrets
+  Manager, and secret injection are deliberately deferred to P4.
 - There is one task by default, so updates and failures can temporarily reduce
   capacity.
 - Container Insights, metrics, alarms, access logs, WAF, autoscaling, budgets,

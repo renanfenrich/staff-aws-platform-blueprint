@@ -6,10 +6,6 @@ variable "application_role_arn" {
   type = string
 }
 
-variable "assign_public_ip" {
-  type = bool
-}
-
 variable "aws_region" {
   type    = string
   default = "us-east-1"

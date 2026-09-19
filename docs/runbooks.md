@@ -419,7 +419,7 @@ Do not proceed until every item is complete:
 6. Plan, apply, and destroy workflows use separate least-privilege permissions,
    approvals, exact artifacts, and concurrency controls.
 7. Budget alerts, operational alarms, and a notification recipient are tested.
-8. Standing ALB and public IPv4 costs and Trivy exceptions are accepted.
+8. Standing ALB and interface-endpoint costs and Trivy exceptions are accepted.
 9. A maintenance window, smoke test, rollback owner, and destroy deadline are
    recorded.
 
@@ -468,8 +468,8 @@ profile, but remote state and ECR contents still require deliberate review.
 5. Apply only the saved destroy plan.
 6. Confirm state has no managed sandbox resources.
 7. Confirm the bootstrap-owned ECR repository and its images remain retained,
-   then check for residual runtime log groups, load balancers, public IPv4
-   addresses, and other chargeable resources.
+   then check for residual runtime log groups, load balancers, interface
+   endpoints, and other chargeable resources.
 
 Production destroy is not a supported workflow.
 

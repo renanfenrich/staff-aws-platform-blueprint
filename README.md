@@ -14,9 +14,9 @@ HTTP API on AWS ECS Fargate with Terraform and GitHub Actions.
 - A dependency-light Node.js 24 API with health, readiness, structured logging,
   configuration validation, and graceful shutdown.
 - A non-root, digest-pinned container image suitable for a read-only filesystem.
-- A bootstrap-owned immutable ECR repository separated from the two-AZ public
-  sandbox VPC, internet-facing ALB, ECS Fargate service, runtime IAM roles, and
-  bounded CloudWatch logs.
+- A bootstrap-owned immutable ECR repository separated from a two-AZ VPC with
+  public ALB subnets, private ECS application subnets, private ECR/Logs VPC
+  endpoints, runtime IAM roles, and bounded CloudWatch logs.
 - Separate ALB and task security groups with no public task ingress.
 - An explicit `deployment_enabled = false` cost gate and a credential-free plan
   that proves zero AWS resource changes.
@@ -61,9 +61,9 @@ GET /ready
 P1 delivered architecture and gap analysis. P2 adds a locally validated
 PostgreSQL-backed project tracker with session authentication and a minimal
 React client. The `make run` local workflow loads the untracked `.env`; see
-[the P2 application baseline](docs/p2-application-baseline.md). It does not yet
-demonstrate private ECS, RDS, Secrets Manager, VPC endpoints, TLS origin, live
-deployment, or AWS smoke tests.
+[the P2 application baseline](docs/p2-application-baseline.md). P3 represents
+and locally validates private ECS networking, but does not demonstrate RDS,
+Secrets Manager, TLS origin, live deployment, or AWS smoke tests.
 
 Terraform stays safe by default:
 

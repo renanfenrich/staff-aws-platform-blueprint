@@ -21,12 +21,13 @@ blueprint. The API supplies structured logs, graceful shutdown, `/health`,
 multi-stage, digest-pinned, X86_64, non-root, and compatible with a read-only
 root filesystem.
 
-The enabled runtime is a single public-facing ALB, one ECS Fargate service and
-task definition, public subnets in two Availability Zones, a public-IP task,
-CloudWatch logs, and separate execution and application task roles. The ALB
-forwards HTTP port 80 to one target group on port 8080. The task accepts ingress
-only from the ALB security group; its outbound TCP 443 rule is presently open
-to IPv4 because it relies on public AWS endpoints. There is no NAT gateway.
+Before P3, the enabled runtime was a single public-facing ALB, one ECS Fargate
+service and task definition, public subnets in two Availability Zones, and a
+public-IP task. P3 replaces that represented path with public ALB subnets,
+private ECS application subnets, ECR/Logs interface endpoints, and an S3 gateway
+endpoint. The ALB still forwards HTTP port 80 to one target group on port 8080;
+task ingress remains ALB-SG-only, task public IPs and broad HTTPS egress are
+removed, and there is no NAT gateway.
 
 Bootstrap is deliberately separate from the disposable runtime. It represents
 the S3 state bucket and lock objects, GitHub OIDC foundation, immutable ECR
@@ -39,8 +40,8 @@ form; it never owns or deletes the registry.
 | Control | Current implementation | Gap to target |
 | --- | --- | --- |
 | Cost gate | Runtime and bootstrap graphs default to disabled. | No protected runtime deploy/destroy lifecycle yet. |
-| Network ingress | Task SG ingress is referenced only from ALB SG. | Tasks are public-subnet/public-IP workloads. |
-| Egress | DNS is limited to the VPC resolver; HTTPS is IPv4-wide. | Replace broad HTTPS egress with endpoint SG paths. |
+| Network ingress | Task SG ingress is referenced only from ALB SG. | Live deployment evidence is absent. |
+| Egress | DNS is limited to the VPC resolver; HTTPS references endpoint SG/S3 prefix list only. | Live endpoint connectivity is unproven. |
 | Container hardening | Non-root UID, read-only root filesystem, no privileged mode, drop `ALL` capabilities. | Verify frontend and migration-task equivalents. |
 | Image identity | Immutable ECR, pre-auth Trivy gate, SPDX SBOM, provenance/SBOM attestations, digest-only runtime input. | Split artifacts for frontend/backend and connect reviewed digests to deploy. |
 | AWS federation | Exact repository-ID/environment GitHub OIDC trust and short sessions. | Separate plan/deploy identities and protected workflows. |
@@ -70,12 +71,13 @@ cannot obtain AWS OIDC credentials.
 
 ## 4. Current Terraform resource inventory
 
-When enabled, the runtime represents 26 resources: 16 network resources (VPC,
-two public subnets, internet gateway, public route table and route,
-associations, two SGs, and rules), three ALB resources, three ECS resources,
-three IAM resources, and one log group. It has no RDS, Secrets Manager, ACM,
-VPC endpoint, private subnet, frontend service, alarm, dashboard, autoscaling,
-or Route 53 resource.
+Before P3, the runtime represented 26 resources. P3 represents 39: 29 network
+resources (VPC, two public and two private application subnets, IGW, public and
+per-application route tables, associations, three SGs and rules, three interface
+endpoints, and one S3 gateway endpoint), three ALB resources, three ECS
+resources, three IAM resources, and one log group. It has no RDS, Secrets
+Manager endpoint, ACM, frontend service, alarm, dashboard, autoscaling, or
+Route 53 resource.
 
 The bootstrap represents 14 resources when it creates the OIDC provider, or 13
 when it references an existing account-level provider: seven S3 state controls,
@@ -196,10 +198,10 @@ must retain a narrow action-only statement and be documented in code and tests.
    destroy controls.
 
 Standing-cost resources after a future apply include ALB, RDS storage/instance,
-interface endpoints (per AZ/service), public IPv4 addresses, CloudWatch logs
+interface endpoints (per AZ/service), CloudWatch logs
 and alarms, ECR image/referrer storage, and possibly Route 53. The S3 gateway
 endpoint has no hourly endpoint charge. Runtime destroy should remove runtime
-resources and assess log retention, snapshots, and public IPv4 release; it
+resources and assess log retention and snapshots; it
 must preserve bootstrap state and ECR evidence by design. RDS deletion
 protection and final-snapshot handling require an explicit environment policy
 before any live use.

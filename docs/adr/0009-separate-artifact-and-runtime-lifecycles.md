@@ -26,8 +26,9 @@ no generic untagged rule because OCI referrer behavior must first be previewed
 in the target account.
 
 The created-provider bootstrap graph grows from 10 to 14 resources; the
-existing-provider graph grows from 9 to 13. The runtime graph drops from 28 to
-26 resources. Normal runtime replacement or destruction cannot remove the
+existing-provider graph grows from 9 to 13. P3 grows the runtime graph from 26
+to 39 resources through private subnets, endpoint routing, and narrow endpoint
+security controls. Normal runtime replacement or destruction cannot remove the
 repository or its published evidence.
 
 ## State consequence

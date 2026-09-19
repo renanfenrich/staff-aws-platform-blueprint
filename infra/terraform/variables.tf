@@ -181,23 +181,6 @@ variable "log_retention_days" {
   }
 }
 
-variable "network_profile" {
-  description = "Network placement profile. Only the disposable public-IP sandbox is implemented."
-  type        = string
-  default     = "sandbox-public"
-  nullable    = false
-
-  validation {
-    condition     = var.network_profile == "sandbox-public"
-    error_message = "network_profile must be sandbox-public in this slice."
-  }
-
-  validation {
-    condition     = var.environment != "production" || var.network_profile != "sandbox-public"
-    error_message = "production must not use the sandbox-public network profile."
-  }
-}
-
 variable "owner" {
   description = "Accountable owner applied to every taggable resource."
   type        = string
@@ -251,6 +234,40 @@ variable "public_subnet_cidrs" {
       contains([for index in range(256) : cidrsubnet(var.vpc_cidr, 8, index)], cidr)
     ]), false)
     error_message = "Every public subnet must be contained in vpc_cidr."
+  }
+}
+
+variable "application_subnet_cidrs" {
+  description = "Two distinct, non-overlapping /24 private application subnet CIDRs inside the VPC CIDR."
+  type        = list(string)
+  default     = ["10.42.10.0/24", "10.42.11.0/24"]
+  nullable    = false
+
+  validation {
+    condition = (
+      length(var.application_subnet_cidrs) == 2 &&
+      length(distinct(var.application_subnet_cidrs)) == 2 &&
+      alltrue([
+        for cidr in var.application_subnet_cidrs :
+        can(cidrnetmask(cidr)) &&
+        endswith(cidr, "/24") &&
+        try(cidr == "${cidrhost(cidr, 0)}/24", false)
+      ])
+    )
+    error_message = "application_subnet_cidrs must contain exactly two distinct canonical /24 IPv4 CIDRs."
+  }
+
+  validation {
+    condition = try(alltrue([
+      for cidr in var.application_subnet_cidrs :
+      contains([for index in range(256) : cidrsubnet(var.vpc_cidr, 8, index)], cidr)
+    ]), false)
+    error_message = "Every application subnet must be contained in vpc_cidr."
+  }
+
+  validation {
+    condition     = length(distinct(concat(var.public_subnet_cidrs, var.application_subnet_cidrs))) == 4
+    error_message = "Public and application subnet CIDRs must be distinct and non-overlapping."
   }
 }
 

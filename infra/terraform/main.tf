@@ -60,13 +60,14 @@ module "network" {
   count  = var.deployment_enabled ? 1 : 0
   source = "./modules/network"
 
-  application_port    = var.application_port
-  availability_zones  = var.availability_zones
-  aws_region          = var.aws_region
-  name                = local.resource_name
-  public_subnet_cidrs = var.public_subnet_cidrs
-  tags                = local.mandatory_tags
-  vpc_cidr            = var.vpc_cidr
+  application_port         = var.application_port
+  application_subnet_cidrs = var.application_subnet_cidrs
+  availability_zones       = var.availability_zones
+  aws_region               = var.aws_region
+  name                     = local.resource_name
+  public_subnet_cidrs      = var.public_subnet_cidrs
+  tags                     = local.mandatory_tags
+  vpc_cidr                 = var.vpc_cidr
 }
 
 module "observability" {
@@ -109,7 +110,6 @@ module "ecs" {
 
   application_port          = var.application_port
   application_role_arn      = module.iam[0].application_role_arn
-  assign_public_ip          = var.network_profile == "sandbox-public"
   aws_region                = var.aws_region
   container_image           = var.container_image
   desired_count             = var.desired_task_count
@@ -118,7 +118,7 @@ module "ecs" {
   log_group_name            = module.observability[0].log_group_name
   name                      = local.resource_name
   security_group_id         = module.network[0].task_security_group_id
-  subnet_ids                = module.network[0].public_subnet_ids
+  subnet_ids                = module.network[0].application_subnet_ids
   tags                      = local.mandatory_tags
   target_group_arn          = module.alb[0].target_group_arn
   task_cpu                  = var.task_cpu
