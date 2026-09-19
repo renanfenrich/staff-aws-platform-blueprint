@@ -7,7 +7,7 @@ import type { Logger } from "../src/logger.js";
 import { createApp } from "../src/server.js";
 
 const config: AppConfig = {
-  databaseUrl: "postgresql://unused",
+  database: { mode: "url", connectionString: "postgresql://unused" },
   environment: "test",
   host: "127.0.0.1",
   logLevel: "error",

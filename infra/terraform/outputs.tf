@@ -37,6 +37,13 @@ output "application_subnet_ids" {
   description = "Private application subnet IDs, or an empty list when disabled."
   value       = try(module.network[0].application_subnet_ids, [])
 }
+output "database_subnet_ids" { value = try(module.network[0].database_subnet_ids, []) }
+output "database_security_group_id" { value = try(module.network[0].database_security_group_id, null) }
+output "database_endpoint" { value = try(module.database[0].address, null) }
+output "database_name" { value = try(module.database[0].database_name, null) }
+output "database_port" { value = try(module.database[0].port, null) }
+output "master_secret_arn" { value = try(module.database[0].master_secret_arn, null) }
+output "migration_task_definition_arn" { value = try(module.migration[0].task_definition_arn, null) }
 
 output "interface_endpoint_ids" {
   description = "Interface VPC endpoint IDs, or an empty list when disabled."

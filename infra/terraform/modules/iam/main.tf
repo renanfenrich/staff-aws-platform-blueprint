@@ -57,3 +57,12 @@ resource "aws_iam_role" "application" {
   name               = "${var.name}-application"
   tags               = var.tags
 }
+
+resource "aws_iam_role_policy" "application_database_secret" {
+  name = "${var.name}-database-secret"
+  role = aws_iam_role.application.id
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = [{ Sid = "ReadRdsManagedMasterSecret", Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = var.database_secret_arn }]
+  })
+}

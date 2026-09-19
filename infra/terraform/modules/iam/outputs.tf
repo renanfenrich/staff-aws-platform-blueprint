@@ -1,6 +1,5 @@
-output "application_permissions" {
-  value = []
-}
+output "application_permissions" { value = ["secretsmanager:GetSecretValue"] }
+output "application_policy" { value = aws_iam_role_policy.application_database_secret.policy }
 
 output "application_role_arn" {
   value = aws_iam_role.application.arn
@@ -19,6 +18,6 @@ output "test_contract" {
     application_trust_policy = aws_iam_role.application.assume_role_policy
     execution_trust_policy   = aws_iam_role.execution.assume_role_policy
     mandatory_tags           = aws_iam_role.execution.tags
-    resource_count           = 3
+    resource_count           = 4
   }
 }

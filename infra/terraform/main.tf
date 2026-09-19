@@ -62,6 +62,7 @@ module "network" {
 
   application_port         = var.application_port
   application_subnet_cidrs = var.application_subnet_cidrs
+  database_subnet_cidrs    = var.database_subnet_cidrs
   availability_zones       = var.availability_zones
   aws_region               = var.aws_region
   name                     = local.resource_name
@@ -84,10 +85,21 @@ module "iam" {
   count  = var.deployment_enabled ? 1 : 0
   source = "./modules/iam"
 
-  ecr_repository_arn = var.ecr_repository_arn
-  log_group_arn      = module.observability[0].log_group_arn
-  name               = local.resource_name
-  tags               = local.mandatory_tags
+  ecr_repository_arn  = var.ecr_repository_arn
+  database_secret_arn = module.database[0].master_secret_arn
+  log_group_arn       = module.observability[0].log_group_arn
+  name                = local.resource_name
+  tags                = local.mandatory_tags
+}
+
+module "database" {
+  count                      = var.deployment_enabled ? 1 : 0
+  source                     = "./modules/database"
+  aws_region                 = var.aws_region
+  database_security_group_id = module.network[0].database_security_group_id
+  database_subnet_ids        = module.network[0].database_subnet_ids
+  name                       = local.resource_name
+  tags                       = local.mandatory_tags
 }
 
 module "alb" {
@@ -123,6 +135,30 @@ module "ecs" {
   target_group_arn          = module.alb[0].target_group_arn
   task_cpu                  = var.task_cpu
   task_memory               = var.task_memory
+  database_host             = module.database[0].address
+  database_name             = module.database[0].database_name
+  database_port             = module.database[0].port
+  database_secret_arn       = module.database[0].master_secret_arn
+  database_user             = module.database[0].username
+  database_ssl_ca_path      = "/app/rds-ca/global-bundle.pem"
 
   depends_on = [module.alb]
+}
+
+module "migration" {
+  count                = var.deployment_enabled ? 1 : 0
+  source               = "./modules/migration"
+  application_role_arn = module.iam[0].application_role_arn
+  aws_region           = var.aws_region
+  container_image      = var.container_image
+  database_host        = module.database[0].address
+  database_name        = module.database[0].database_name
+  database_port        = module.database[0].port
+  database_secret_arn  = module.database[0].master_secret_arn
+  database_user        = module.database[0].username
+  database_ssl_ca_path = "/app/rds-ca/global-bundle.pem"
+  execution_role_arn   = module.iam[0].execution_role_arn
+  log_group_name       = module.observability[0].log_group_name
+  name                 = local.resource_name
+  tags                 = local.mandatory_tags
 }

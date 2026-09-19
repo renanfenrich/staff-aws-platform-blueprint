@@ -48,7 +48,14 @@ resource "aws_ecs_task_definition" "application" {
         {
           name  = "SHUTDOWN_TIMEOUT_MS"
           value = "25000"
-        }
+        },
+        { name = "DATABASE_HOST", value = var.database_host },
+        { name = "DATABASE_PORT", value = tostring(var.database_port) },
+        { name = "DATABASE_NAME", value = var.database_name },
+        { name = "DATABASE_USER", value = var.database_user },
+        { name = "DATABASE_SECRET_ARN", value = var.database_secret_arn },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "DATABASE_SSL_CA_PATH", value = var.database_ssl_ca_path }
       ]
       healthCheck = {
         command = [

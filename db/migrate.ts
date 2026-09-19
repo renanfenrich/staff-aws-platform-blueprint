@@ -1,13 +1,31 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
+import { type DatabaseConfig, loadConfig } from "../src/config.js";
+import { createSecretsPasswordProvider } from "../src/database-credentials.js";
 
 const migrationsDirectory = join(process.cwd(), "db", "migrations");
 
-export async function migrate(databaseUrl: string): Promise<void> {
-  const client = new Client({ connectionString: databaseUrl });
+export async function migrate(config: DatabaseConfig): Promise<void> {
+  const client = new Client(
+    config.mode === "url"
+      ? { connectionString: config.connectionString }
+      : {
+          host: config.host,
+          port: config.port,
+          database: config.database,
+          user: config.user,
+          password: createSecretsPasswordProvider(
+            config.secretArn,
+            config.region,
+            config.user,
+          ),
+          ssl: { ca: readFileSync(config.sslCaPath, "utf8"), rejectUnauthorized: true },
+        },
+  );
   await client.connect();
   try {
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -48,7 +66,5 @@ export async function migrate(databaseUrl: string): Promise<void> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL is required for migrations");
-  await migrate(databaseUrl);
+  await migrate(loadConfig().database);
 }
