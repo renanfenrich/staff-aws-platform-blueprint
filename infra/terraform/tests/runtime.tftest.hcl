@@ -379,9 +379,9 @@ run "accept_china_endpoint_names" {
       module.network[0].test_contract.interface_endpoints.ecr_api.service_name == "cn.com.amazonaws.cn-north-1.ecr.api" &&
       module.network[0].test_contract.interface_endpoints.ecr_dkr.service_name == "cn.com.amazonaws.cn-north-1.ecr.dkr" &&
       module.network[0].test_contract.interface_endpoints.logs.service_name == "com.amazonaws.cn-north-1.logs" &&
-      module.network[0].test_contract.s3_service_name == "cn.com.amazonaws.cn-north-1.s3"
+      module.network[0].test_contract.s3_service_name == "com.amazonaws.cn-north-1.s3"
     )
-    error_message = "China endpoints must use China ECR and S3 names while Logs retains its service name."
+    error_message = "China ECR uses China endpoint names while Logs and S3 retain their service names."
   }
 }
 

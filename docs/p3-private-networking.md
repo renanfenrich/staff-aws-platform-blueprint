@@ -27,11 +27,11 @@ absent. IAM is unchanged: execution-role ECR/Logs actions remain narrow and
 the application role remains empty. Endpoint policies stay at AWS defaults, so
 IAM—not endpoints—remains the authorization boundary.
 
-Endpoint service names are deterministic and partition-aware: commercial AWS
-and GovCloud use `com.amazonaws.<region>`, while China uses
-`cn.com.amazonaws.<region>` for ECR and S3. CloudWatch Logs retains
-`com.amazonaws.<region>.logs` in all supported partitions. No provider data
-source or AWS API lookup is used to resolve these names.
+Endpoint service names are deterministic and partition-aware: China ECR
+interface endpoints use `cn.com.amazonaws.<region>`; China CloudWatch Logs and
+the S3 gateway endpoint use `com.amazonaws.<region>`, as S3 does across all
+supported partitions. No provider data source or AWS API lookup is used to
+resolve these names.
 
 ## Evidence and next prerequisite
 

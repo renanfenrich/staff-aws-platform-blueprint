@@ -8,7 +8,7 @@ locals {
     ecr_dkr = "${local.endpoint_prefix}.${var.aws_region}.ecr.dkr"
     logs    = "com.amazonaws.${var.aws_region}.logs"
   }
-  s3_endpoint_service = "${local.endpoint_prefix}.${var.aws_region}.s3"
+  s3_endpoint_service = "com.amazonaws.${var.aws_region}.s3"
 }
 
 resource "aws_vpc" "this" {
