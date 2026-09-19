@@ -16,7 +16,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "start": "node dist/src/index.js",
-    "test": "npm run build && node --test dist/test/config.test.js dist/test/server.test.js",
+    "test": "npm run build && node --test dist/test/config.test.js dist/test/database-credentials.test.js dist/test/server.test.js",
     "test:integration": "npm run build && node --test dist/test/integration.test.js",
     "frontend:build": "npm --prefix frontend run build",
     "frontend:lint": "npm --prefix frontend run lint",
@@ -32,6 +32,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "3.1136.0",
     "@node-rs/argon2": "2.2.1",
     "pg": "8.23.0"
   }

@@ -10,7 +10,8 @@ import { createApp } from "../src/server.js";
 
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://app:app@127.0.0.1:5432/tracker";
-const database = createDatabase(databaseUrl);
+const databaseConfig = { mode: "url" as const, connectionString: databaseUrl };
+const database = createDatabase(databaseConfig);
 const app = createApp(
   loadConfig({ NODE_ENV: "test", DATABASE_URL: databaseUrl, LOG_LEVEL: "error" }),
   createLogger("error"),
@@ -161,7 +162,7 @@ test("migration runner skips applied migrations and retains checksum protection"
     "SELECT applied_at FROM schema_migrations WHERE id = $1",
     ["001_initial.sql"],
   );
-  await migrate(databaseUrl);
+  await migrate(databaseConfig);
   const after = await database.query<{ id: string; applied_at: string }>(
     "SELECT id, applied_at FROM schema_migrations ORDER BY id",
   );
@@ -185,7 +186,7 @@ test("migration runner skips applied migrations and retains checksum protection"
     "UPDATE schema_migrations SET checksum = 'changed' WHERE id = $1",
     ["001_initial.sql"],
   );
-  await assert.rejects(() => migrate(databaseUrl), /Migration checksum mismatch/);
+  await assert.rejects(() => migrate(databaseConfig), /Migration checksum mismatch/);
   await database.query("UPDATE schema_migrations SET checksum = $1 WHERE id = $2", [
     checksum,
     "001_initial.sql",

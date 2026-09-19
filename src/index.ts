@@ -7,7 +7,7 @@ import { createApp } from "./server.js";
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
-  const app = createApp(config, logger, createDatabase(config.databaseUrl));
+  const app = createApp(config, logger, createDatabase(config.database));
   let shuttingDown = false;
 
   async function shutdown(signal: NodeJS.Signals): Promise<void> {

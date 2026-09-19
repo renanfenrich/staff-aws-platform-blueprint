@@ -1,14 +1,26 @@
 locals {
   public_subnets      = zipmap(var.availability_zones, var.public_subnet_cidrs)
   application_subnets = zipmap(var.availability_zones, var.application_subnet_cidrs)
+  database_subnets    = zipmap(var.availability_zones, var.database_subnet_cidrs)
   aws_partition       = startswith(var.aws_region, "cn-") ? "aws-cn" : startswith(var.aws_region, "us-gov-") ? "aws-us-gov" : "aws"
   endpoint_prefix     = local.aws_partition == "aws-cn" ? "cn.com.amazonaws" : "com.amazonaws"
   interface_services = {
-    ecr_api = "${local.endpoint_prefix}.${var.aws_region}.ecr.api"
-    ecr_dkr = "${local.endpoint_prefix}.${var.aws_region}.ecr.dkr"
-    logs    = "com.amazonaws.${var.aws_region}.logs"
+    ecr_api        = "${local.endpoint_prefix}.${var.aws_region}.ecr.api"
+    ecr_dkr        = "${local.endpoint_prefix}.${var.aws_region}.ecr.dkr"
+    logs           = "com.amazonaws.${var.aws_region}.logs"
+    secretsmanager = "com.amazonaws.${var.aws_region}.secretsmanager"
   }
   s3_endpoint_service = "com.amazonaws.${var.aws_region}.s3"
+}
+
+resource "aws_subnet" "database" {
+  for_each                = local.database_subnets
+  availability_zone       = each.key
+  cidr_block              = each.value
+  map_public_ip_on_launch = false
+  region                  = var.aws_region
+  vpc_id                  = aws_vpc.this.id
+  tags                    = merge(var.tags, { Name = "${var.name}-database-${each.key}", Network = "database" })
 }
 
 resource "aws_vpc" "this" {
@@ -95,6 +107,20 @@ resource "aws_route_table_association" "application" {
   subnet_id      = each.value.id
 }
 
+resource "aws_route_table" "database" {
+  for_each = aws_subnet.database
+  region   = var.aws_region
+  vpc_id   = aws_vpc.this.id
+  tags     = merge(var.tags, { Name = "${var.name}-database-${each.key}" })
+}
+
+resource "aws_route_table_association" "database" {
+  for_each       = aws_subnet.database
+  region         = var.aws_region
+  route_table_id = aws_route_table.database[each.key].id
+  subnet_id      = each.value.id
+}
+
 resource "aws_security_group" "alb" {
   description            = "Sandbox ALB ingress and task-only egress"
   name                   = "${var.name}-alb"
@@ -124,6 +150,16 @@ resource "aws_security_group" "endpoint" {
   vpc_id                 = aws_vpc.this.id
 
   tags = merge(var.tags, { Name = "${var.name}-endpoint" })
+}
+
+resource "aws_security_group" "database" {
+  description            = "PostgreSQL ingress from Fargate tasks only"
+  egress                 = []
+  name                   = "${var.name}-database"
+  region                 = var.aws_region
+  revoke_rules_on_delete = true
+  vpc_id                 = aws_vpc.this.id
+  tags                   = merge(var.tags, { Name = "${var.name}-database" })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
@@ -172,6 +208,28 @@ resource "aws_vpc_security_group_egress_rule" "task_to_endpoint_https" {
   to_port                      = 443
 
   tags = merge(var.tags, { Name = "${var.name}-task-to-endpoint-https" })
+}
+
+resource "aws_vpc_security_group_egress_rule" "task_to_database_postgres" {
+  description                  = "PostgreSQL to the database security group only"
+  from_port                    = 5432
+  ip_protocol                  = "tcp"
+  region                       = var.aws_region
+  referenced_security_group_id = aws_security_group.database.id
+  security_group_id            = aws_security_group.task.id
+  to_port                      = 5432
+  tags                         = merge(var.tags, { Name = "${var.name}-task-to-database-postgres" })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "database_from_task_postgres" {
+  description                  = "PostgreSQL from Fargate tasks only"
+  from_port                    = 5432
+  ip_protocol                  = "tcp"
+  region                       = var.aws_region
+  referenced_security_group_id = aws_security_group.task.id
+  security_group_id            = aws_security_group.database.id
+  to_port                      = 5432
+  tags                         = merge(var.tags, { Name = "${var.name}-database-from-task-postgres" })
 }
 
 resource "aws_vpc_security_group_egress_rule" "task_to_s3_https" {

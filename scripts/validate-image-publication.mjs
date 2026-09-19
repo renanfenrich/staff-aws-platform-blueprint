@@ -200,7 +200,7 @@ const runtimeMain = read("infra/terraform/main.tf");
 const runtimeVariables = read("infra/terraform/variables.tf");
 assert.doesNotMatch(runtimeMain, /module "ecr"/);
 assert.doesNotMatch(runtimeMain, /data "aws_ecr_/);
-assert.match(runtimeMain, /ecr_repository_arn = var\.ecr_repository_arn/);
+assert.match(runtimeMain, /ecr_repository_arn\s+= var\.ecr_repository_arn/);
 assert.match(runtimeVariables, /variable "ecr_repository_arn"/);
 assert.match(runtimeVariables, /variable "ecr_repository_url"/);
 assert.match(

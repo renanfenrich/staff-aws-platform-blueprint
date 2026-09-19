@@ -11,6 +11,13 @@ mock_provider "aws" {
     }
   }
 
+  mock_resource "aws_db_instance" {
+    defaults = {
+      address            = "fixture.cluster.us-east-1.rds.amazonaws.com"
+      master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:fixture" }]
+    }
+  }
+
   mock_resource "aws_iam_role" {
     defaults = {
       arn = "arn:aws:iam::111122223333:role/fixture"
@@ -42,6 +49,8 @@ run "disabled_mode_has_no_resources" {
   assert {
     condition = (
       length(module.network) == 0 &&
+      length(module.database) == 0 &&
+      length(module.migration) == 0 &&
       length(module.iam) == 0 &&
       length(module.alb) == 0 &&
       length(module.ecs) == 0 &&
@@ -55,6 +64,9 @@ run "disabled_mode_has_no_resources" {
       output.vpc_id == null &&
       output.public_subnet_ids == [] &&
       output.application_subnet_ids == [] &&
+      output.database_subnet_ids == [] &&
+      output.database_endpoint == null &&
+      output.master_secret_arn == null &&
       output.interface_endpoint_ids == [] &&
       output.endpoint_security_group_id == null &&
       output.ecr_repository_url == null &&
@@ -122,9 +134,10 @@ run "enabled_sandbox_runtime" {
   assert {
     condition = (
       module.network[0].test_contract.application_default_route_count == 0 &&
-      module.network[0].test_contract.interface_endpoint_count == 3
+      module.network[0].test_contract.interface_endpoint_count == 4 &&
+      module.network[0].test_contract.database_default_route_count == 0
     )
-    error_message = "Application route tables must have no internet default route and P3 must have exactly three interface endpoints."
+    error_message = "Application and database route tables must have no internet default route and P4 must have exactly four interface endpoints."
   }
 
   assert {
@@ -132,9 +145,11 @@ run "enabled_sandbox_runtime" {
       module.network[0].test_contract.interface_endpoints.ecr_api.private_dns_enabled &&
       module.network[0].test_contract.interface_endpoints.ecr_dkr.private_dns_enabled &&
       module.network[0].test_contract.interface_endpoints.logs.private_dns_enabled &&
+      module.network[0].test_contract.interface_endpoints.secretsmanager.private_dns_enabled &&
       module.network[0].test_contract.interface_endpoints.ecr_api.service_name == "com.amazonaws.us-east-1.ecr.api" &&
       module.network[0].test_contract.interface_endpoints.ecr_dkr.service_name == "com.amazonaws.us-east-1.ecr.dkr" &&
       module.network[0].test_contract.interface_endpoints.logs.service_name == "com.amazonaws.us-east-1.logs" &&
+      module.network[0].test_contract.interface_endpoints.secretsmanager.service_name == "com.amazonaws.us-east-1.secretsmanager" &&
       toset(module.network[0].test_contract.interface_endpoints.ecr_api.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
       toset(module.network[0].test_contract.interface_endpoints.ecr_dkr.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
       toset(module.network[0].test_contract.interface_endpoints.logs.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
@@ -142,7 +157,7 @@ run "enabled_sandbox_runtime" {
       toset(module.network[0].test_contract.interface_endpoints.ecr_dkr.security_group_ids) == toset([module.network[0].test_contract.endpoint_security_group_id]) &&
       toset(module.network[0].test_contract.interface_endpoints.logs.security_group_ids) == toset([module.network[0].test_contract.endpoint_security_group_id])
     )
-    error_message = "P3 interface endpoints must be private ECR API, ECR DKR, and Logs paths only."
+    error_message = "P4 interface endpoints must include the private Secrets Manager path."
   }
 
   assert {
@@ -176,8 +191,42 @@ run "enabled_sandbox_runtime" {
   }
 
   assert {
-    condition     = module.iam[0].application_permissions == []
-    error_message = "The application task role must have no permissions."
+    condition = (
+      length(module.network[0].test_contract.database_subnet_ids) == 2 &&
+      toset(module.network[0].test_contract.database_subnet_zones) == toset(["us-east-1a", "us-east-1b"]) &&
+      module.network[0].test_contract.database_ingress_source_id == module.network[0].test_contract.task_security_group_id &&
+      module.network[0].test_contract.task_database_egress_id == module.network[0].test_contract.database_security_group_id
+    )
+    error_message = "Database subnets must be isolated across both AZs and PostgreSQL must use SG-to-SG rules only."
+  }
+
+  assert {
+    condition = (
+      module.database[0].test_contract.engine == "postgres" &&
+      module.database[0].test_contract.engine_version == "17.11" &&
+      !module.database[0].test_contract.publicly_accessible &&
+      module.database[0].test_contract.storage_encrypted &&
+      module.database[0].test_contract.force_ssl.value == "1" &&
+      toset(module.database[0].test_contract.database_subnet_ids) == toset(module.network[0].test_contract.database_subnet_ids)
+    )
+    error_message = "P4 must represent private encrypted PostgreSQL 17 with forced TLS in both database subnets."
+  }
+
+  assert {
+    condition     = jsondecode(module.iam[0].application_policy).Statement[0].Action == ["secretsmanager:GetSecretValue"] && jsondecode(module.iam[0].application_policy).Statement[0].Resource == module.database[0].test_contract.managed_secret_arn
+    error_message = "The application role must read only the exact RDS-managed secret."
+  }
+
+  assert {
+    condition = (
+      module.ecs[0].test_contract.container_definition.image == module.migration[0].test_contract.container_definition.image &&
+      module.migration[0].test_contract.container_definition.command == ["node", "dist/db/migrate.js"] &&
+      module.migration[0].test_contract.container_definition.readonlyRootFilesystem &&
+      !module.migration[0].test_contract.container_definition.privileged &&
+      module.migration[0].test_contract.container_definition.user == "1000" &&
+      module.migration[0].test_contract.container_definition.linuxParameters.capabilities.drop == ["ALL"]
+    )
+    error_message = "The one-off migration definition must reuse the immutable image and preserve container hardening."
   }
 
   assert {
@@ -268,9 +317,11 @@ run "enabled_sandbox_runtime" {
       module.iam[0].test_contract.resource_count +
       module.alb[0].test_contract.resource_count +
       module.ecs[0].test_contract.resource_count +
-      module.observability[0].test_contract.resource_count == 39
+      module.observability[0].test_contract.resource_count +
+      module.database[0].test_contract.resource_count +
+      module.migration[0].test_contract.resource_count == 51
     )
-    error_message = "Enabled P3 runtime must consume the external repository and manage exactly 39 resources."
+    error_message = "Enabled P4 runtime must consume the external repository and manage exactly 51 resources."
   }
 }
 
@@ -356,6 +407,7 @@ run "accept_govcloud_endpoint_names" {
       module.network[0].test_contract.interface_endpoints.ecr_api.service_name == "com.amazonaws.us-gov-west-1.ecr.api" &&
       module.network[0].test_contract.interface_endpoints.ecr_dkr.service_name == "com.amazonaws.us-gov-west-1.ecr.dkr" &&
       module.network[0].test_contract.interface_endpoints.logs.service_name == "com.amazonaws.us-gov-west-1.logs" &&
+      module.network[0].test_contract.interface_endpoints.secretsmanager.service_name == "com.amazonaws.us-gov-west-1.secretsmanager" &&
       module.network[0].test_contract.s3_service_name == "com.amazonaws.us-gov-west-1.s3"
     )
     error_message = "GovCloud endpoint service names must retain the commercial prefix."
@@ -379,6 +431,7 @@ run "accept_china_endpoint_names" {
       module.network[0].test_contract.interface_endpoints.ecr_api.service_name == "cn.com.amazonaws.cn-north-1.ecr.api" &&
       module.network[0].test_contract.interface_endpoints.ecr_dkr.service_name == "cn.com.amazonaws.cn-north-1.ecr.dkr" &&
       module.network[0].test_contract.interface_endpoints.logs.service_name == "com.amazonaws.cn-north-1.logs" &&
+      module.network[0].test_contract.interface_endpoints.secretsmanager.service_name == "com.amazonaws.cn-north-1.secretsmanager" &&
       module.network[0].test_contract.s3_service_name == "com.amazonaws.cn-north-1.s3"
     )
     error_message = "China ECR uses China endpoint names while Logs and S3 retain their service names."
