@@ -21,6 +21,7 @@
     "frontend:build": "npm --prefix frontend run build",
     "frontend:lint": "npm --prefix frontend run lint",
     "frontend:test": "npm --prefix frontend run test",
+    "frontend:runtime-test": "npm --prefix frontend run test:runtime",
     "frontend:typecheck": "npm --prefix frontend run typecheck",
     "typecheck": "tsc --noEmit"
   },

@@ -52,15 +52,21 @@ resource "aws_iam_role_policy" "execution" {
   })
 }
 
-resource "aws_iam_role" "application" {
+resource "aws_iam_role" "frontend" {
   assume_role_policy = local.ecs_tasks_trust_policy
-  name               = "${var.name}-application"
+  name               = "${var.name}-frontend"
   tags               = var.tags
 }
 
-resource "aws_iam_role_policy" "application_database_secret" {
+resource "aws_iam_role" "backend" {
+  assume_role_policy = local.ecs_tasks_trust_policy
+  name               = "${var.name}-backend"
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy" "backend_database_secret" {
   name = "${var.name}-database-secret"
-  role = aws_iam_role.application.id
+  role = aws_iam_role.backend.id
   policy = jsonencode({
     Version   = "2012-10-17"
     Statement = [{ Sid = "ReadRdsManagedMasterSecret", Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = var.database_secret_arn }]

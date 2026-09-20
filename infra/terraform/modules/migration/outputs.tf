@@ -1,2 +1,2 @@
 output "task_definition_arn" { value = aws_ecs_task_definition.migration.arn }
-output "test_contract" { value = { container_definition = jsondecode(aws_ecs_task_definition.migration.container_definitions)[0], resource_count = 1 } }
+output "test_contract" { value = { container_definition = jsondecode(aws_ecs_task_definition.migration.container_definitions)[0], task_role_arn = aws_ecs_task_definition.migration.task_role_arn, resource_count = 1 } }

@@ -15,6 +15,14 @@ RUN npm run build
 FROM build AS production-deps
 RUN npm prune --omit=dev
 
+FROM ${NODE_IMAGE} AS frontend-build
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
+COPY frontend/src ./src
+RUN npm run build
+
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     PORT=8080
@@ -28,6 +36,8 @@ COPY --from=build --chown=node:node /app/dist/src ./dist/src
 COPY --from=build --chown=node:node /app/dist/db ./dist/db
 COPY --from=build --chown=node:node /app/db/migrations ./db/migrations
 COPY --from=build --chown=node:node /rds-ca ./rds-ca
+COPY --from=frontend-build --chown=node:node /app/frontend/dist ./frontend/dist
+COPY --chown=node:node frontend/server.mjs ./frontend/server.mjs
 COPY --from=production-deps --chown=node:node /app/node_modules ./node_modules
 USER node
 EXPOSE 8080
