@@ -68,7 +68,9 @@ export const createFrontendServer = (root) => {
 
     const file = safePath(buildRoot, pathname);
     if (!file) {
-      send(response, 400, "Bad Request", { "content-type": "text/plain; charset=utf-8" });
+      send(response, 400, "Bad Request", {
+        "content-type": "text/plain; charset=utf-8",
+      });
       return;
     }
     if (await serveFile(request, response, file)) return;
@@ -84,12 +86,14 @@ export const createFrontendServer = (root) => {
       send(response, 500, "Frontend build is unavailable");
       return;
     }
-    if (!(await serveFile(request, response, index))) send(response, 500, "Frontend build is unavailable");
+    if (!(await serveFile(request, response, index)))
+      send(response, 500, "Frontend build is unavailable");
   });
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const root = process.env.FRONTEND_DIST_DIR ?? new URL("./dist", import.meta.url).pathname;
+  const root =
+    process.env.FRONTEND_DIST_DIR ?? new URL("./dist", import.meta.url).pathname;
   const port = Number(process.env.PORT ?? 8080);
   const host = process.env.HOST ?? "0.0.0.0";
   createFrontendServer(root).listen(port, host);

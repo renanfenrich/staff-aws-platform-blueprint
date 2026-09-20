@@ -19,16 +19,15 @@ test("serves health, SPA routes, and built static assets", async () => {
   const health = await fetch(`${origin}/health`);
   assert.equal(health.status, 200);
   assert.equal(await health.text(), "ok");
-
   const home = await fetch(`${origin}/`);
   assert.equal(home.status, 200);
   assert.match(await home.text(), /<div id="root"><\/div>/);
-
   const spa = await fetch(`${origin}/projects/123`);
   assert.equal(spa.status, 200);
   assert.match(await spa.text(), /<div id="root"><\/div>/);
-
-  const asset = (await readdir(join(root, "assets"))).find((name) => name.endsWith(".js"));
+  const asset = (await readdir(join(root, "assets"))).find((name) =>
+    name.endsWith(".js"),
+  );
   assert.ok(asset);
   assert.equal((await fetch(`${origin}/assets/${asset}`)).status, 200);
 });
