@@ -15,7 +15,8 @@ The frontend role trusts ECS tasks but has no application permissions. The
 backend role has only `secretsmanager:GetSecretValue` for the exact RDS-managed
 secret. The execution role is shared and unchanged. The migration definition
 uses the backend role and remains one-off and unexecuted; P8 must run it before
-any backend rollout.
+any backend rollout. That future execution must use the backend security group,
+application subnets, and `assignPublicIp = DISABLED`.
 
 P5 intentionally retains one transitional immutable image digest for frontend,
 backend, and migration. The image contains the backend runtime, migrations, RDS
