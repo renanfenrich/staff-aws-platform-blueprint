@@ -164,7 +164,7 @@ instances:
 | Network security | 3 security groups and 8 standalone ingress or egress rules |
 | Runtime IAM | 2 roles and 1 inline execution policy |
 | Entry point | 1 ALB, 1 IP target group, and 1 HTTP listener |
-| Compute | 1 ECS cluster, 1 Fargate task definition, and 1 ECS service |
+| Compute | 1 ECS cluster, frontend and backend Fargate task definitions, and frontend and backend ECS services behind one ALB |
 | Observability | 1 CloudWatch log group |
 
 The runtime owns no registry resource. It receives the external repository ARN
