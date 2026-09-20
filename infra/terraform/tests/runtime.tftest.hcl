@@ -338,6 +338,37 @@ run "enabled_sandbox_runtime" {
     )
     error_message = "Enabled P5 runtime must consume the external repository and manage exactly 67 resources."
   }
+
+  assert {
+    condition = (
+      module.alb[0].test_contract.default_target_group_arn == module.alb[0].test_contract.frontend_target_group_arn &&
+      module.alb[0].test_contract.backend_rule_priority == 100 &&
+      toset(module.alb[0].test_contract.backend_path_patterns) == toset(["/api", "/api/*"]) &&
+      module.alb[0].test_contract.frontend_health_path == "/health" &&
+      module.alb[0].test_contract.backend_health_path == "/ready" &&
+      module.ecs[0].test_contract.frontend.assign_public_ip == false &&
+      module.ecs[0].test_contract.backend.assign_public_ip == false &&
+      module.ecs[0].test_contract.frontend.container_definition.command == ["node", "frontend/server.mjs"] &&
+      module.ecs[0].test_contract.frontend.container_definition.image == module.ecs[0].test_contract.backend.container_definition.image &&
+      module.ecs[0].test_contract.backend.container_definition.image == module.migration[0].test_contract.container_definition.image
+    )
+    error_message = "P5 must route the frontend by default, route both API paths to the backend, and use one immutable transitional image."
+  }
+
+  assert {
+    condition = (
+      module.network[0].test_contract.frontend_task_security_group_id != module.network[0].test_contract.backend_task_security_group_id &&
+      module.network[0].test_contract.frontend_alb_ingress_source_id == module.network[0].test_contract.alb_security_group_id &&
+      module.network[0].test_contract.backend_alb_ingress_source_id == module.network[0].test_contract.alb_security_group_id &&
+      module.network[0].test_contract.backend_database_egress_id == module.network[0].test_contract.database_security_group_id &&
+      module.network[0].test_contract.database_ingress_source_id == module.network[0].test_contract.backend_task_security_group_id &&
+      toset(module.network[0].test_contract.endpoint_ingress_sources) == toset([module.network[0].test_contract.frontend_task_security_group_id, module.network[0].test_contract.backend_task_security_group_id]) &&
+      module.iam[0].test_contract.frontend_permissions == [] &&
+      jsondecode(module.iam[0].backend_policy).Statement[0].Action == ["secretsmanager:GetSecretValue"] &&
+      jsondecode(module.iam[0].backend_policy).Statement[0].Resource == module.database[0].test_contract.managed_secret_arn
+    )
+    error_message = "P5 must isolate frontend and backend task roles and security groups while preserving exact backend secret access."
+  }
 }
 
 run "reject_latest_image" {
