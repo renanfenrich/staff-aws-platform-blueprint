@@ -6,7 +6,8 @@
     "build": "tsc -b && vite build",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:runtime": "npm run build && node --test server.test.mjs"
   },
   "dependencies": {
     "react": "19.3.0",
