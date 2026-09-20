@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
 import { Pool, type QueryResultRow } from "pg";
+import type { DatabaseConfig } from "./config.js";
+import { createSecretsPasswordProvider } from "./database-credentials.js";
 
 export interface Database {
   close(): Promise<void>;
@@ -9,8 +12,29 @@ export interface Database {
   ready(): Promise<boolean>;
 }
 
-export function createDatabase(connectionString: string): Database {
-  const pool = new Pool({ connectionString, connectionTimeoutMillis: 1_500, max: 10 });
+export function createDatabase(config: DatabaseConfig): Database {
+  const pool = new Pool(
+    config.mode === "url"
+      ? {
+          connectionString: config.connectionString,
+          connectionTimeoutMillis: 1_500,
+          max: 10,
+        }
+      : {
+          host: config.host,
+          port: config.port,
+          database: config.database,
+          user: config.user,
+          password: createSecretsPasswordProvider(
+            config.secretArn,
+            config.region,
+            config.user,
+          ),
+          ssl: { ca: readFileSync(config.sslCaPath, "utf8"), rejectUnauthorized: true },
+          connectionTimeoutMillis: 1_500,
+          max: 10,
+        },
+  );
   return {
     async close() {
       await pool.end();

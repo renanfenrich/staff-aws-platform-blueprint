@@ -1,0 +1,13 @@
+variable "application_role_arn" { type = string }
+variable "aws_region" { type = string }
+variable "container_image" { type = string }
+variable "database_host" { type = string }
+variable "database_name" { type = string }
+variable "database_port" { type = number }
+variable "database_secret_arn" { type = string }
+variable "database_ssl_ca_path" { type = string }
+variable "database_user" { type = string }
+variable "execution_role_arn" { type = string }
+variable "log_group_name" { type = string }
+variable "name" { type = string }
+variable "tags" { type = map(string) }

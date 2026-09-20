@@ -6,6 +6,8 @@ variable "application_subnet_cidrs" {
   type = list(string)
 }
 
+variable "database_subnet_cidrs" { type = list(string) }
+
 variable "availability_zones" {
   type = list(string)
 }

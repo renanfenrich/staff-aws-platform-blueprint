@@ -61,9 +61,10 @@ GET /ready
 P1 delivered architecture and gap analysis. P2 adds a locally validated
 PostgreSQL-backed project tracker with session authentication and a minimal
 React client. The `make run` local workflow loads the untracked `.env`; see
-[the P2 application baseline](docs/p2-application-baseline.md). P3 represents
-and locally validates private ECS networking, but does not demonstrate RDS,
-Secrets Manager, TLS origin, live deployment, or AWS smoke tests.
+[the P2 application baseline](docs/p2-application-baseline.md). P4 represents
+and locally validates private ECS networking, PostgreSQL, RDS-managed Secrets
+Manager credentials, TLS, and a migration task contract; it does not demonstrate
+live AWS connectivity, rotation, task execution, or deployment.
 
 Terraform stays safe by default:
 
