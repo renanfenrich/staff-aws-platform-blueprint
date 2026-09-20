@@ -36,6 +36,12 @@ mock_provider "aws" {
       arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/fixture/1111111111111111"
     }
   }
+
+  mock_resource "aws_lb_listener" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:listener/app/fixture/1111111111111111/2222222222222222"
+    }
+  }
 }
 
 variables {
@@ -71,11 +77,13 @@ run "disabled_mode_has_no_resources" {
       output.endpoint_security_group_id == null &&
       output.ecr_repository_url == null &&
       output.ecs_cluster_name == null &&
-      output.ecs_service_name == null &&
+      output.frontend_ecs_service_name == null &&
+      output.backend_ecs_service_name == null &&
       output.alb_dns_name == null &&
       output.log_group_name == null &&
       output.task_execution_role_arn == null &&
-      output.application_task_role_arn == null
+      output.frontend_task_role_arn == null &&
+      output.backend_task_role_arn == null
     )
     error_message = "Disabled outputs must remain null or empty."
   }
@@ -99,9 +107,16 @@ run "enabled_sandbox_runtime" {
   }
 
   override_resource {
-    target = module.network[0].aws_security_group.task
+    target = module.network[0].aws_security_group.frontend
     values = {
       id = "sg-22222222"
+    }
+  }
+
+  override_resource {
+    target = module.network[0].aws_security_group.backend
+    values = {
+      id = "sg-44444444"
     }
   }
 
@@ -319,9 +334,9 @@ run "enabled_sandbox_runtime" {
       module.ecs[0].test_contract.resource_count +
       module.observability[0].test_contract.resource_count +
       module.database[0].test_contract.resource_count +
-      module.migration[0].test_contract.resource_count == 54
+      module.migration[0].test_contract.resource_count == 67
     )
-    error_message = "Enabled P4 runtime must consume the external repository and manage exactly 54 resources."
+    error_message = "Enabled P5 runtime must consume the external repository and manage exactly 67 resources."
   }
 }
 

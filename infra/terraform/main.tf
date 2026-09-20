@@ -107,7 +107,6 @@ module "alb" {
   source = "./modules/alb"
 
   application_port  = var.application_port
-  health_check_path = var.health_check_path
   name              = local.resource_name
   region            = var.aws_region
   security_group_id = module.network[0].alb_security_group_id
@@ -120,27 +119,30 @@ module "ecs" {
   count  = var.deployment_enabled ? 1 : 0
   source = "./modules/ecs"
 
-  application_port          = var.application_port
-  application_role_arn      = module.iam[0].application_role_arn
-  aws_region                = var.aws_region
-  container_image           = var.container_image
-  desired_count             = var.desired_task_count
-  execution_role_arn        = module.iam[0].execution_role_arn
-  health_check_grace_period = var.health_check_grace_period_seconds
-  log_group_name            = module.observability[0].log_group_name
-  name                      = local.resource_name
-  security_group_id         = module.network[0].task_security_group_id
-  subnet_ids                = module.network[0].application_subnet_ids
-  tags                      = local.mandatory_tags
-  target_group_arn          = module.alb[0].target_group_arn
-  task_cpu                  = var.task_cpu
-  task_memory               = var.task_memory
-  database_host             = module.database[0].address
-  database_name             = module.database[0].database_name
-  database_port             = module.database[0].port
-  database_secret_arn       = module.database[0].master_secret_arn
-  database_user             = module.database[0].username
-  database_ssl_ca_path      = "/app/rds-ca/global-bundle.pem"
+  application_port           = var.application_port
+  backend_role_arn           = module.iam[0].backend_role_arn
+  backend_security_group_id  = module.network[0].backend_task_security_group_id
+  backend_target_group_arn   = module.alb[0].backend_target_group_arn
+  aws_region                 = var.aws_region
+  container_image            = var.container_image
+  desired_count              = var.desired_task_count
+  execution_role_arn         = module.iam[0].execution_role_arn
+  health_check_grace_period  = var.health_check_grace_period_seconds
+  log_group_name             = module.observability[0].log_group_name
+  name                       = local.resource_name
+  frontend_role_arn          = module.iam[0].frontend_role_arn
+  frontend_security_group_id = module.network[0].frontend_task_security_group_id
+  frontend_target_group_arn  = module.alb[0].frontend_target_group_arn
+  subnet_ids                 = module.network[0].application_subnet_ids
+  tags                       = local.mandatory_tags
+  task_cpu                   = var.task_cpu
+  task_memory                = var.task_memory
+  database_host              = module.database[0].address
+  database_name              = module.database[0].database_name
+  database_port              = module.database[0].port
+  database_secret_arn        = module.database[0].master_secret_arn
+  database_user              = module.database[0].username
+  database_ssl_ca_path       = "/app/rds-ca/global-bundle.pem"
 
   depends_on = [module.alb]
 }
@@ -148,7 +150,7 @@ module "ecs" {
 module "migration" {
   count                = var.deployment_enabled ? 1 : 0
   source               = "./modules/migration"
-  application_role_arn = module.iam[0].application_role_arn
+  backend_role_arn     = module.iam[0].backend_role_arn
   aws_region           = var.aws_region
   container_image      = var.container_image
   database_host        = module.database[0].address

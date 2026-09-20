@@ -27,7 +27,7 @@ resource "aws_ecs_task_definition" "migration" {
   network_mode             = "awsvpc"
   region                   = var.aws_region
   requires_compatibilities = ["FARGATE"]
-  task_role_arn            = var.application_role_arn
+  task_role_arn            = var.backend_role_arn
   runtime_platform {
     cpu_architecture        = "X86_64"
     operating_system_family = "LINUX"

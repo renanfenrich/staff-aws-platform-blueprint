@@ -1,18 +1,50 @@
 locals {
-  public_subnets      = zipmap(var.availability_zones, var.public_subnet_cidrs)
-  application_subnets = zipmap(var.availability_zones, var.application_subnet_cidrs)
-  database_subnets    = zipmap(var.availability_zones, var.database_subnet_cidrs)
-  aws_partition       = startswith(var.aws_region, "cn-") ? "aws-cn" : startswith(var.aws_region, "us-gov-") ? "aws-us-gov" : "aws"
-  endpoint_prefix     = local.aws_partition == "aws-cn" ? "cn.com.amazonaws" : "com.amazonaws"
-  interface_services = {
-    ecr_api        = "${local.endpoint_prefix}.${var.aws_region}.ecr.api"
-    ecr_dkr        = "${local.endpoint_prefix}.${var.aws_region}.ecr.dkr"
-    logs           = "com.amazonaws.${var.aws_region}.logs"
-    secretsmanager = "com.amazonaws.${var.aws_region}.secretsmanager"
-  }
-  s3_endpoint_service = "com.amazonaws.${var.aws_region}.s3"
-}
 
+  public_subnets = zipmap(var.availability_zones, var.public_subnet_cidrs)
+
+  application_subnets = zipmap(var.availability_zones, var.application_subnet_cidrs)
+
+  database_subnets = zipmap(var.availability_zones, var.database_subnet_cidrs)
+
+  aws_partition = startswith(var.aws_region, "cn-") ? "aws-cn" : startswith(var.aws_region, "us-gov-") ? "aws-us-gov" : "aws"
+
+  endpoint_prefix = local.aws_partition == "aws-cn" ? "cn.com.amazonaws" : "com.amazonaws"
+
+  interface_services = {
+    ecr_api = "${local.endpoint_prefix}.${var.aws_region}.ecr.api",
+    ecr_dkr = "${local.endpoint_prefix}.${var.aws_region}.ecr.dkr",
+    logs    = "com.amazonaws.${var.aws_region}.logs",
+  secretsmanager = "com.amazonaws.${var.aws_region}.secretsmanager" }
+}
+resource "aws_vpc" "this" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  region               = var.aws_region
+  tags = merge(var.tags, {
+  Name = "${var.name}-vpc" })
+}
+resource "aws_subnet" "public" {
+  for_each          = local.public_subnets
+  availability_zone = each.key
+  cidr_block        = each.value
+  region            = var.aws_region
+  vpc_id            = aws_vpc.this.id
+  tags = merge(var.tags, {
+    Name = "${var.name}-public-${each.key}",
+  Network = "public" })
+}
+resource "aws_subnet" "application" {
+  for_each                = local.application_subnets
+  availability_zone       = each.key
+  cidr_block              = each.value
+  map_public_ip_on_launch = false
+  region                  = var.aws_region
+  vpc_id                  = aws_vpc.this.id
+  tags = merge(var.tags, {
+    Name = "${var.name}-application-${each.key}",
+  Network = "application" })
+}
 resource "aws_subnet" "database" {
   for_each                = local.database_subnets
   availability_zone       = each.key
@@ -20,127 +52,87 @@ resource "aws_subnet" "database" {
   map_public_ip_on_launch = false
   region                  = var.aws_region
   vpc_id                  = aws_vpc.this.id
-  tags                    = merge(var.tags, { Name = "${var.name}-database-${each.key}", Network = "database" })
-}
-
-resource "aws_vpc" "this" {
-  cidr_block           = var.vpc_cidr
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-  region               = var.aws_region
-
-  tags = merge(var.tags, { Name = "${var.name}-vpc" })
-}
-
-resource "aws_subnet" "public" {
-  for_each = local.public_subnets
-
-  availability_zone = each.key
-  cidr_block        = each.value
-  region            = var.aws_region
-  vpc_id            = aws_vpc.this.id
-
   tags = merge(var.tags, {
-    Name    = "${var.name}-public-${each.key}"
-    Network = "public"
-  })
+    Name = "${var.name}-database-${each.key}",
+  Network = "database" })
 }
-
-resource "aws_subnet" "application" {
-  for_each = local.application_subnets
-
-  availability_zone       = each.key
-  cidr_block              = each.value
-  map_public_ip_on_launch = false
-  region                  = var.aws_region
-  vpc_id                  = aws_vpc.this.id
-
-  tags = merge(var.tags, {
-    Name    = "${var.name}-application-${each.key}"
-    Network = "application"
-  })
-}
-
 resource "aws_internet_gateway" "this" {
   region = var.aws_region
   vpc_id = aws_vpc.this.id
-
-  tags = merge(var.tags, { Name = "${var.name}-igw" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-igw" })
 }
-
 resource "aws_route_table" "public" {
   region = var.aws_region
   vpc_id = aws_vpc.this.id
-
-  tags = merge(var.tags, { Name = "${var.name}-public" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-public" })
 }
-
 resource "aws_route" "internet" {
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = aws_internet_gateway.this.id
   region                 = var.aws_region
   route_table_id         = aws_route_table.public.id
 }
-
 resource "aws_route_table_association" "public" {
-  for_each = aws_subnet.public
-
+  for_each       = aws_subnet.public
   region         = var.aws_region
   route_table_id = aws_route_table.public.id
   subnet_id      = each.value.id
 }
-
 resource "aws_route_table" "application" {
   for_each = aws_subnet.application
-
-  region = var.aws_region
-  vpc_id = aws_vpc.this.id
-
-  tags = merge(var.tags, { Name = "${var.name}-application-${each.key}" })
+  region   = var.aws_region
+  vpc_id   = aws_vpc.this.id
+  tags = merge(var.tags, {
+  Name = "${var.name}-application-${each.key}" })
 }
-
 resource "aws_route_table_association" "application" {
-  for_each = aws_subnet.application
-
+  for_each       = aws_subnet.application
   region         = var.aws_region
   route_table_id = aws_route_table.application[each.key].id
   subnet_id      = each.value.id
 }
-
 resource "aws_route_table" "database" {
   for_each = aws_subnet.database
   region   = var.aws_region
   vpc_id   = aws_vpc.this.id
-  tags     = merge(var.tags, { Name = "${var.name}-database-${each.key}" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-database-${each.key}" })
 }
-
 resource "aws_route_table_association" "database" {
   for_each       = aws_subnet.database
   region         = var.aws_region
   route_table_id = aws_route_table.database[each.key].id
   subnet_id      = each.value.id
 }
-
 resource "aws_security_group" "alb" {
-  description            = "Sandbox ALB ingress and task-only egress"
+  description            = "Sandbox ALB ingress and workload-only egress"
   name                   = "${var.name}-alb"
   region                 = var.aws_region
   revoke_rules_on_delete = true
   vpc_id                 = aws_vpc.this.id
-
-  tags = merge(var.tags, { Name = "${var.name}-alb" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-alb" })
 }
-
-resource "aws_security_group" "task" {
-  description            = "Fargate task ingress from ALB and private AWS service egress"
-  name                   = "${var.name}-task"
+resource "aws_security_group" "frontend" {
+  description            = "Frontend Fargate ingress from ALB and private AWS service egress"
+  name                   = "${var.name}-frontend"
   region                 = var.aws_region
   revoke_rules_on_delete = true
   vpc_id                 = aws_vpc.this.id
-
-  tags = merge(var.tags, { Name = "${var.name}-task" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-frontend" })
 }
-
+resource "aws_security_group" "backend" {
+  description            = "Backend Fargate ingress from ALB, database, and private AWS service egress"
+  name                   = "${var.name}-backend"
+  region                 = var.aws_region
+  revoke_rules_on_delete = true
+  vpc_id                 = aws_vpc.this.id
+  tags = merge(var.tags, {
+  Name = "${var.name}-backend" })
+}
 resource "aws_security_group" "endpoint" {
   description            = "Private interface endpoint ingress from Fargate tasks only"
   egress                 = []
@@ -148,141 +140,149 @@ resource "aws_security_group" "endpoint" {
   region                 = var.aws_region
   revoke_rules_on_delete = true
   vpc_id                 = aws_vpc.this.id
-
-  tags = merge(var.tags, { Name = "${var.name}-endpoint" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-endpoint" })
 }
-
 resource "aws_security_group" "database" {
-  description            = "PostgreSQL ingress from Fargate tasks only"
+  description            = "PostgreSQL ingress from backend Fargate tasks only"
   egress                 = []
   name                   = "${var.name}-database"
   region                 = var.aws_region
   revoke_rules_on_delete = true
   vpc_id                 = aws_vpc.this.id
-  tags                   = merge(var.tags, { Name = "${var.name}-database" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-database" })
 }
-
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
   cidr_ipv4         = "0.0.0.0/0"
-  description       = "Sandbox HTTP entry point"
   from_port         = 80
   ip_protocol       = "tcp"
   region            = var.aws_region
   security_group_id = aws_security_group.alb.id
   to_port           = 80
-
-  tags = merge(var.tags, { Name = "${var.name}-alb-http" })
+  tags              = var.tags
 }
-
-resource "aws_vpc_security_group_egress_rule" "alb_to_task" {
-  description                  = "Application traffic to Fargate tasks"
+resource "aws_vpc_security_group_egress_rule" "alb_to_frontend" {
   from_port                    = var.application_port
   ip_protocol                  = "tcp"
   region                       = var.aws_region
-  referenced_security_group_id = aws_security_group.task.id
+  referenced_security_group_id = aws_security_group.frontend.id
   security_group_id            = aws_security_group.alb.id
   to_port                      = var.application_port
-
-  tags = merge(var.tags, { Name = "${var.name}-alb-to-task" })
+  tags                         = var.tags
 }
-
-resource "aws_vpc_security_group_ingress_rule" "task_from_alb" {
-  description                  = "Application traffic from the ALB only"
+resource "aws_vpc_security_group_egress_rule" "alb_to_backend" {
+  from_port                    = var.application_port
+  ip_protocol                  = "tcp"
+  region                       = var.aws_region
+  referenced_security_group_id = aws_security_group.backend.id
+  security_group_id            = aws_security_group.alb.id
+  to_port                      = var.application_port
+  tags                         = var.tags
+}
+resource "aws_vpc_security_group_ingress_rule" "frontend_from_alb" {
   from_port                    = var.application_port
   ip_protocol                  = "tcp"
   region                       = var.aws_region
   referenced_security_group_id = aws_security_group.alb.id
-  security_group_id            = aws_security_group.task.id
+  security_group_id            = aws_security_group.frontend.id
   to_port                      = var.application_port
-
-  tags = merge(var.tags, { Name = "${var.name}-task-from-alb" })
+  tags                         = var.tags
 }
-
-resource "aws_vpc_security_group_egress_rule" "task_to_endpoint_https" {
-  description                  = "HTTPS to private ECR and CloudWatch Logs endpoints"
-  from_port                    = 443
+resource "aws_vpc_security_group_ingress_rule" "backend_from_alb" {
+  from_port                    = var.application_port
   ip_protocol                  = "tcp"
   region                       = var.aws_region
-  referenced_security_group_id = aws_security_group.endpoint.id
-  security_group_id            = aws_security_group.task.id
-  to_port                      = 443
-
-  tags = merge(var.tags, { Name = "${var.name}-task-to-endpoint-https" })
+  referenced_security_group_id = aws_security_group.alb.id
+  security_group_id            = aws_security_group.backend.id
+  to_port                      = var.application_port
+  tags                         = var.tags
 }
-
-resource "aws_vpc_security_group_egress_rule" "task_to_database_postgres" {
-  description                  = "PostgreSQL to the database security group only"
+resource "aws_vpc_security_group_egress_rule" "backend_to_database_postgres" {
   from_port                    = 5432
   ip_protocol                  = "tcp"
   region                       = var.aws_region
   referenced_security_group_id = aws_security_group.database.id
-  security_group_id            = aws_security_group.task.id
+  security_group_id            = aws_security_group.backend.id
   to_port                      = 5432
-  tags                         = merge(var.tags, { Name = "${var.name}-task-to-database-postgres" })
+  tags                         = var.tags
 }
-
-resource "aws_vpc_security_group_ingress_rule" "database_from_task_postgres" {
-  description                  = "PostgreSQL from Fargate tasks only"
+resource "aws_vpc_security_group_ingress_rule" "database_from_backend_postgres" {
   from_port                    = 5432
   ip_protocol                  = "tcp"
   region                       = var.aws_region
-  referenced_security_group_id = aws_security_group.task.id
+  referenced_security_group_id = aws_security_group.backend.id
   security_group_id            = aws_security_group.database.id
   to_port                      = 5432
-  tags                         = merge(var.tags, { Name = "${var.name}-database-from-task-postgres" })
+  tags                         = var.tags
 }
-
+resource "aws_vpc_security_group_egress_rule" "task_to_endpoint_https" {
+  for_each = {
+    frontend = aws_security_group.frontend.id,
+    backend  = aws_security_group.backend.id
+  }
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  region                       = var.aws_region
+  referenced_security_group_id = aws_security_group.endpoint.id
+  security_group_id            = each.value
+  to_port                      = 443
+  tags                         = var.tags
+}
+resource "aws_vpc_security_group_ingress_rule" "endpoint_from_task_https" {
+  for_each = {
+    frontend = aws_security_group.frontend.id,
+    backend  = aws_security_group.backend.id
+  }
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  region                       = var.aws_region
+  referenced_security_group_id = each.value
+  security_group_id            = aws_security_group.endpoint.id
+  to_port                      = 443
+  tags                         = var.tags
+}
 resource "aws_vpc_security_group_egress_rule" "task_to_s3_https" {
-  description       = "HTTPS to the S3 gateway endpoint prefix list"
+  for_each = {
+    frontend = aws_security_group.frontend.id,
+    backend  = aws_security_group.backend.id
+  }
   from_port         = 443
   ip_protocol       = "tcp"
   prefix_list_id    = aws_vpc_endpoint.s3.prefix_list_id
   region            = var.aws_region
-  security_group_id = aws_security_group.task.id
+  security_group_id = each.value
   to_port           = 443
-
-  tags = merge(var.tags, { Name = "${var.name}-task-to-s3-https" })
+  tags              = var.tags
 }
-
 resource "aws_vpc_security_group_egress_rule" "task_dns_udp" {
+  for_each = {
+    frontend = aws_security_group.frontend.id,
+    backend  = aws_security_group.backend.id
+  }
   cidr_ipv4         = "${cidrhost(var.vpc_cidr, 2)}/32"
-  description       = "UDP DNS to the VPC resolver"
   from_port         = 53
   ip_protocol       = "udp"
   region            = var.aws_region
-  security_group_id = aws_security_group.task.id
+  security_group_id = each.value
   to_port           = 53
-
-  tags = merge(var.tags, { Name = "${var.name}-task-dns-udp" })
+  tags              = var.tags
 }
-
 resource "aws_vpc_security_group_egress_rule" "task_dns_tcp" {
+  for_each = {
+    frontend = aws_security_group.frontend.id,
+    backend  = aws_security_group.backend.id
+  }
   cidr_ipv4         = "${cidrhost(var.vpc_cidr, 2)}/32"
-  description       = "TCP DNS to the VPC resolver"
   from_port         = 53
   ip_protocol       = "tcp"
   region            = var.aws_region
-  security_group_id = aws_security_group.task.id
+  security_group_id = each.value
   to_port           = 53
-
-  tags = merge(var.tags, { Name = "${var.name}-task-dns-tcp" })
+  tags              = var.tags
 }
-
-resource "aws_vpc_security_group_ingress_rule" "endpoint_from_task_https" {
-  description                  = "HTTPS from Fargate tasks only"
-  from_port                    = 443
-  ip_protocol                  = "tcp"
-  region                       = var.aws_region
-  referenced_security_group_id = aws_security_group.task.id
-  security_group_id            = aws_security_group.endpoint.id
-  to_port                      = 443
-
-  tags = merge(var.tags, { Name = "${var.name}-endpoint-from-task-https" })
-}
-
 resource "aws_vpc_endpoint" "interface" {
-  for_each = local.interface_services
-
+  for_each            = local.interface_services
   private_dns_enabled = true
   region              = var.aws_region
   security_group_ids  = [aws_security_group.endpoint.id]
@@ -290,16 +290,15 @@ resource "aws_vpc_endpoint" "interface" {
   subnet_ids          = [for zone in var.availability_zones : aws_subnet.application[zone].id]
   vpc_endpoint_type   = "Interface"
   vpc_id              = aws_vpc.this.id
-
-  tags = merge(var.tags, { Name = "${var.name}-${replace(each.key, "_", "-")}-endpoint" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-${replace(each.key, "_", "-")}-endpoint" })
 }
-
 resource "aws_vpc_endpoint" "s3" {
   region            = var.aws_region
   route_table_ids   = [for zone in var.availability_zones : aws_route_table.application[zone].id]
-  service_name      = local.s3_endpoint_service
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
   vpc_id            = aws_vpc.this.id
-
-  tags = merge(var.tags, { Name = "${var.name}-s3-endpoint" })
+  tags = merge(var.tags, {
+  Name = "${var.name}-s3-endpoint" })
 }

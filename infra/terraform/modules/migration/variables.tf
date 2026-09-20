@@ -1,4 +1,4 @@
-variable "application_role_arn" { type = string }
+variable "backend_role_arn" { type = string }
 variable "aws_region" { type = string }
 variable "container_image" { type = string }
 variable "database_host" { type = string }

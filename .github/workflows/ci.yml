@@ -55,6 +55,7 @@ jobs:
           npm run frontend:typecheck
           npm run frontend:test
           npm run frontend:build
+          npm run frontend:runtime-test
 
   provenance:
     name: Application provenance

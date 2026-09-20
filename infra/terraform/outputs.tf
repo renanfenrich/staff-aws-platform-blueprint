@@ -3,9 +3,14 @@ output "alb_dns_name" {
   value       = try(module.alb[0].dns_name, null)
 }
 
-output "application_task_role_arn" {
-  description = "Empty-by-default application task role ARN, or null when disabled."
-  value       = try(module.iam[0].application_role_arn, null)
+output "frontend_task_role_arn" {
+  description = "Frontend task role ARN, or null when disabled."
+  value       = try(module.iam[0].frontend_role_arn, null)
+}
+
+output "backend_task_role_arn" {
+  description = "Backend task role ARN, or null when disabled."
+  value       = try(module.iam[0].backend_role_arn, null)
 }
 
 output "ecr_repository_url" {
@@ -18,10 +23,12 @@ output "ecs_cluster_name" {
   value       = try(module.ecs[0].cluster_name, null)
 }
 
-output "ecs_service_name" {
-  description = "ECS service name, or null when deployment is disabled."
-  value       = try(module.ecs[0].service_name, null)
-}
+output "frontend_ecs_service_name" { value = try(module.ecs[0].frontend_service_name, null) }
+output "backend_ecs_service_name" { value = try(module.ecs[0].backend_service_name, null) }
+output "frontend_target_group_arn" { value = try(module.alb[0].frontend_target_group_arn, null) }
+output "backend_target_group_arn" { value = try(module.alb[0].backend_target_group_arn, null) }
+output "frontend_task_security_group_id" { value = try(module.network[0].frontend_task_security_group_id, null) }
+output "backend_task_security_group_id" { value = try(module.network[0].backend_task_security_group_id, null) }
 
 output "log_group_name" {
   description = "CloudWatch application log group name, or null when disabled."
