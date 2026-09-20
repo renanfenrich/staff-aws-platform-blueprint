@@ -319,9 +319,9 @@ run "enabled_sandbox_runtime" {
       module.ecs[0].test_contract.resource_count +
       module.observability[0].test_contract.resource_count +
       module.database[0].test_contract.resource_count +
-      module.migration[0].test_contract.resource_count == 51
+      module.migration[0].test_contract.resource_count == 54
     )
-    error_message = "Enabled P4 runtime must consume the external repository and manage exactly 51 resources."
+    error_message = "Enabled P4 runtime must consume the external repository and manage exactly 54 resources."
   }
 }
 

@@ -62,7 +62,7 @@ output "test_contract" {
     interface_endpoint_count = length(aws_vpc_endpoint.interface)
     public_subnet_ids        = [for zone in var.availability_zones : aws_subnet.public[zone].id]
     public_subnet_zones      = [for zone in var.availability_zones : aws_subnet.public[zone].availability_zone]
-    resource_count           = 36
+    resource_count           = 39
     s3_prefix_list_id        = aws_vpc_endpoint.s3.prefix_list_id
     s3_route_table_ids       = aws_vpc_endpoint.s3.route_table_ids
     s3_service_name          = aws_vpc_endpoint.s3.service_name
