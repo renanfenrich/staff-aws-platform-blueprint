@@ -37,6 +37,7 @@ test("rejects missing assets, API paths, traversal, and unsupported methods", as
   assert.equal((await fetch(`${origin}/api`)).status, 404);
   assert.equal((await fetch(`${origin}/api/example`)).status, 404);
   assert.equal((await fetch(`${origin}/%2e%2e/server.mjs`)).status, 404);
+  assert.notEqual((await fetch(`${origin}/%2e%2e%2fserver.mjs`)).status, 200);
   assert.equal((await fetch(`${origin}/%`)).status, 400);
   assert.equal((await fetch(`${origin}/`, { method: "POST" })).status, 405);
 });

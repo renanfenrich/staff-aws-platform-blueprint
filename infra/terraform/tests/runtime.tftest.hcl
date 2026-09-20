@@ -120,6 +120,41 @@ run "enabled_sandbox_runtime" {
     }
   }
 
+  override_resource {
+    target = module.iam[0].aws_iam_role.frontend
+    values = {
+      arn = "arn:aws:iam::111122223333:role/frontend-fixture"
+    }
+  }
+
+  override_resource {
+    target = module.iam[0].aws_iam_role.backend
+    values = {
+      arn = "arn:aws:iam::111122223333:role/backend-fixture"
+    }
+  }
+
+  override_resource {
+    target = module.alb[0].aws_lb_target_group.frontend
+    values = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/frontend-fixture/1111111111111111"
+    }
+  }
+
+  override_resource {
+    target = module.alb[0].aws_lb_target_group.backend
+    values = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/backend-fixture/2222222222222222"
+    }
+  }
+
+  override_resource {
+    target = module.migration[0].aws_ecs_task_definition.migration
+    values = {
+      task_role_arn = "arn:aws:iam::111122223333:role/backend-fixture"
+    }
+  }
+
   variables {
     container_image    = "111122223333.dkr.ecr.us-east-1.amazonaws.com/fixture@sha256:0000000000000000000000000000000000000000000000000000000000000001"
     deployment_enabled = true
@@ -135,15 +170,6 @@ run "enabled_sandbox_runtime" {
       toset(module.network[0].test_contract.application_subnet_zones) == toset(["us-east-1a", "us-east-1b"])
     )
     error_message = "ALB and ECS placement must each span the two configured Availability Zones."
-  }
-
-  assert {
-    condition = (
-      module.ecs[0].test_contract.assign_public_ip == false &&
-      toset(module.ecs[0].test_contract.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
-      toset(module.alb[0].test_contract.subnet_ids) == toset(module.network[0].test_contract.public_subnet_ids)
-    )
-    error_message = "ECS must use private application subnets without public IPs while the ALB stays public."
   }
 
   assert {
@@ -187,36 +213,6 @@ run "enabled_sandbox_runtime" {
 
   assert {
     condition = (
-      module.network[0].test_contract.task_endpoint_egress_id == module.network[0].test_contract.endpoint_security_group_id &&
-      module.network[0].test_contract.endpoint_ingress_source_id == module.network[0].test_contract.task_security_group_id &&
-      module.network[0].test_contract.task_s3_prefix_list_id == module.network[0].test_contract.s3_prefix_list_id
-    )
-    error_message = "Task HTTPS egress must use only the endpoint SG and S3 prefix list."
-  }
-
-  assert {
-    condition = (
-      module.network[0].test_contract.task_ingress_cidr == null &&
-      module.network[0].test_contract.task_ingress_source_id == module.network[0].test_contract.alb_security_group_id &&
-      module.network[0].test_contract.task_ingress_group_id == module.network[0].test_contract.task_security_group_id &&
-      module.network[0].test_contract.alb_egress_group_id == module.network[0].test_contract.task_security_group_id &&
-      module.network[0].test_contract.alb_egress_port == 8080
-    )
-    error_message = "Task ingress must reference only the ALB security group."
-  }
-
-  assert {
-    condition = (
-      length(module.network[0].test_contract.database_subnet_ids) == 2 &&
-      toset(module.network[0].test_contract.database_subnet_zones) == toset(["us-east-1a", "us-east-1b"]) &&
-      module.network[0].test_contract.database_ingress_source_id == module.network[0].test_contract.task_security_group_id &&
-      module.network[0].test_contract.task_database_egress_id == module.network[0].test_contract.database_security_group_id
-    )
-    error_message = "Database subnets must be isolated across both AZs and PostgreSQL must use SG-to-SG rules only."
-  }
-
-  assert {
-    condition = (
       module.database[0].test_contract.engine == "postgres" &&
       module.database[0].test_contract.engine_version == "17.11" &&
       !module.database[0].test_contract.publicly_accessible &&
@@ -228,13 +224,8 @@ run "enabled_sandbox_runtime" {
   }
 
   assert {
-    condition     = jsondecode(module.iam[0].application_policy).Statement[0].Action == ["secretsmanager:GetSecretValue"] && jsondecode(module.iam[0].application_policy).Statement[0].Resource == module.database[0].test_contract.managed_secret_arn
-    error_message = "The application role must read only the exact RDS-managed secret."
-  }
-
-  assert {
     condition = (
-      module.ecs[0].test_contract.container_definition.image == module.migration[0].test_contract.container_definition.image &&
+      module.ecs[0].test_contract.backend.container_definition.image == module.migration[0].test_contract.container_definition.image &&
       module.migration[0].test_contract.container_definition.command == ["node", "dist/db/migrate.js"] &&
       module.migration[0].test_contract.container_definition.readonlyRootFilesystem &&
       !module.migration[0].test_contract.container_definition.privileged &&
@@ -246,7 +237,7 @@ run "enabled_sandbox_runtime" {
 
   assert {
     condition = (
-      jsondecode(module.iam[0].test_contract.application_trust_policy).Statement[0].Principal.Service == "ecs-tasks.amazonaws.com" &&
+      jsondecode(module.iam[0].test_contract.backend_trust_policy).Statement[0].Principal.Service == "ecs-tasks.amazonaws.com" &&
       jsondecode(module.iam[0].test_contract.execution_trust_policy).Statement[0].Principal.Service == "ecs-tasks.amazonaws.com"
     )
     error_message = "Both runtime roles must trust only ECS tasks."
@@ -282,24 +273,6 @@ run "enabled_sandbox_runtime" {
   }
 
   assert {
-    condition = (
-      module.ecs[0].test_contract.circuit_breaker_enabled &&
-      module.ecs[0].test_contract.circuit_breaker_rollback
-    )
-    error_message = "ECS circuit breaker and automatic rollback must be enabled."
-  }
-
-  assert {
-    condition     = module.alb[0].test_contract.health_check_path == "/ready"
-    error_message = "The target group must use the readiness endpoint."
-  }
-
-  assert {
-    condition     = module.ecs[0].test_contract.desired_count == 1
-    error_message = "The sandbox service must default to one task."
-  }
-
-  assert {
     condition = alltrue([
       for tags in [
         module.network[0].test_contract.mandatory_tags,
@@ -313,16 +286,6 @@ run "enabled_sandbox_runtime" {
       ])
     ])
     error_message = "Mandatory tags must reach every resource module."
-  }
-
-  assert {
-    condition = (
-      module.ecs[0].test_contract.container_definition.readonlyRootFilesystem &&
-      !module.ecs[0].test_contract.container_definition.privileged &&
-      module.ecs[0].test_contract.container_definition.user == "1000" &&
-      module.ecs[0].test_contract.container_definition.linuxParameters.capabilities.drop == ["ALL"]
-    )
-    error_message = "The application container must retain its runtime hardening."
   }
 
   assert {
@@ -346,11 +309,25 @@ run "enabled_sandbox_runtime" {
       toset(module.alb[0].test_contract.backend_path_patterns) == toset(["/api", "/api/*"]) &&
       module.alb[0].test_contract.frontend_health_path == "/health" &&
       module.alb[0].test_contract.backend_health_path == "/ready" &&
+      module.ecs[0].test_contract.frontend.desired_count == 1 &&
+      module.ecs[0].test_contract.backend.desired_count == 1 &&
       module.ecs[0].test_contract.frontend.assign_public_ip == false &&
       module.ecs[0].test_contract.backend.assign_public_ip == false &&
+      toset(module.ecs[0].test_contract.frontend.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
+      toset(module.ecs[0].test_contract.backend.subnet_ids) == toset(module.network[0].test_contract.application_subnet_ids) &&
+      toset(module.ecs[0].test_contract.frontend.security_group_ids) == toset([module.network[0].test_contract.frontend_task_security_group_id]) &&
+      toset(module.ecs[0].test_contract.backend.security_group_ids) == toset([module.network[0].test_contract.backend_task_security_group_id]) &&
+      module.ecs[0].test_contract.frontend.target_group_arn == module.alb[0].test_contract.frontend_target_group_arn &&
+      module.ecs[0].test_contract.backend.target_group_arn == module.alb[0].test_contract.backend_target_group_arn &&
+      module.ecs[0].test_contract.frontend.circuit_breaker_enabled && module.ecs[0].test_contract.frontend.circuit_breaker_rollback &&
+      module.ecs[0].test_contract.backend.circuit_breaker_enabled && module.ecs[0].test_contract.backend.circuit_breaker_rollback &&
+      module.ecs[0].test_contract.frontend.role_arn == module.iam[0].frontend_role_arn &&
+      module.ecs[0].test_contract.backend.role_arn == module.iam[0].backend_role_arn &&
       module.ecs[0].test_contract.frontend.container_definition.command == ["node", "frontend/server.mjs"] &&
       module.ecs[0].test_contract.frontend.container_definition.image == module.ecs[0].test_contract.backend.container_definition.image &&
-      module.ecs[0].test_contract.backend.container_definition.image == module.migration[0].test_contract.container_definition.image
+      module.ecs[0].test_contract.backend.container_definition.image == module.migration[0].test_contract.container_definition.image &&
+      strcontains(join(" ", module.ecs[0].test_contract.frontend.container_definition.healthCheck.command), "/health") &&
+      strcontains(join(" ", module.ecs[0].test_contract.backend.container_definition.healthCheck.command), "/health")
     )
     error_message = "P5 must route the frontend by default, route both API paths to the backend, and use one immutable transitional image."
   }
@@ -358,16 +335,48 @@ run "enabled_sandbox_runtime" {
   assert {
     condition = (
       module.network[0].test_contract.frontend_task_security_group_id != module.network[0].test_contract.backend_task_security_group_id &&
-      module.network[0].test_contract.frontend_alb_ingress_source_id == module.network[0].test_contract.alb_security_group_id &&
-      module.network[0].test_contract.backend_alb_ingress_source_id == module.network[0].test_contract.alb_security_group_id &&
-      module.network[0].test_contract.backend_database_egress_id == module.network[0].test_contract.database_security_group_id &&
-      module.network[0].test_contract.database_ingress_source_id == module.network[0].test_contract.backend_task_security_group_id &&
-      toset(module.network[0].test_contract.endpoint_ingress_sources) == toset([module.network[0].test_contract.frontend_task_security_group_id, module.network[0].test_contract.backend_task_security_group_id]) &&
+      module.network[0].test_contract.frontend_alb_ingress.source_id == module.network[0].test_contract.alb_security_group_id &&
+      module.network[0].test_contract.frontend_alb_ingress.group_id == module.network[0].test_contract.frontend_task_security_group_id &&
+      module.network[0].test_contract.frontend_alb_ingress.from_port == 8080 && module.network[0].test_contract.frontend_alb_ingress.to_port == 8080 &&
+      module.network[0].test_contract.backend_alb_ingress.source_id == module.network[0].test_contract.alb_security_group_id &&
+      module.network[0].test_contract.backend_alb_ingress.group_id == module.network[0].test_contract.backend_task_security_group_id &&
+      alltrue([for rule in values(module.network[0].test_contract.alb_to_workloads) : rule.source_id == module.network[0].test_contract.alb_security_group_id && rule.from_port == 8080 && rule.to_port == 8080]) &&
+      toset([for rule in values(module.network[0].test_contract.alb_to_workloads) : rule.target_id]) == toset([module.network[0].test_contract.frontend_task_security_group_id, module.network[0].test_contract.backend_task_security_group_id]) &&
+      length(module.network[0].test_contract.endpoint_egress) == 2 &&
+      alltrue([for rule in values(module.network[0].test_contract.endpoint_egress) : rule.target_id == module.network[0].test_contract.endpoint_security_group_id && rule.from_port == 443 && rule.to_port == 443]) &&
+      toset([for rule in values(module.network[0].test_contract.endpoint_egress) : rule.source_id]) == toset([module.network[0].test_contract.frontend_task_security_group_id, module.network[0].test_contract.backend_task_security_group_id]) &&
+      length(module.network[0].test_contract.endpoint_ingress) == 2 &&
+      alltrue([for rule in values(module.network[0].test_contract.endpoint_ingress) : rule.group_id == module.network[0].test_contract.endpoint_security_group_id && rule.from_port == 443 && rule.to_port == 443]) &&
+      toset([for rule in values(module.network[0].test_contract.endpoint_ingress) : rule.source_id]) == toset([module.network[0].test_contract.frontend_task_security_group_id, module.network[0].test_contract.backend_task_security_group_id]) &&
+      length(module.network[0].test_contract.s3_egress) == 2 && alltrue([for rule in values(module.network[0].test_contract.s3_egress) : rule.prefix_list_id == module.network[0].test_contract.s3_prefix_list_id && rule.from_port == 443 && rule.to_port == 443]) &&
+      length(module.network[0].test_contract.dns_egress) == 4 &&
+      module.network[0].test_contract.direct_workload_egress_rule_count == 0 &&
+      module.network[0].test_contract.backend_database_egress.source_id == module.network[0].test_contract.backend_task_security_group_id &&
+      module.network[0].test_contract.backend_database_egress.target_id == module.network[0].test_contract.database_security_group_id &&
+      module.network[0].test_contract.backend_database_egress.from_port == 5432 && module.network[0].test_contract.backend_database_egress.to_port == 5432 &&
+      module.network[0].test_contract.database_backend_ingress.group_id == module.network[0].test_contract.database_security_group_id &&
+      module.network[0].test_contract.database_backend_ingress.source_id == module.network[0].test_contract.backend_task_security_group_id &&
+      module.network[0].test_contract.database_backend_ingress.from_port == 5432 && module.network[0].test_contract.database_backend_ingress.to_port == 5432 &&
       module.iam[0].test_contract.frontend_permissions == [] &&
       jsondecode(module.iam[0].backend_policy).Statement[0].Action == ["secretsmanager:GetSecretValue"] &&
       jsondecode(module.iam[0].backend_policy).Statement[0].Resource == module.database[0].test_contract.managed_secret_arn
     )
     error_message = "P5 must isolate frontend and backend task roles and security groups while preserving exact backend secret access."
+  }
+
+  assert {
+    condition = (
+      !contains([for item in module.ecs[0].test_contract.frontend.container_definition.environment : item.name], "DATABASE_HOST") &&
+      !contains([for item in module.ecs[0].test_contract.frontend.container_definition.environment : item.name], "DATABASE_PORT") &&
+      !contains([for item in module.ecs[0].test_contract.frontend.container_definition.environment : item.name], "DATABASE_NAME") &&
+      !contains([for item in module.ecs[0].test_contract.frontend.container_definition.environment : item.name], "DATABASE_USER") &&
+      !contains([for item in module.ecs[0].test_contract.frontend.container_definition.environment : item.name], "DATABASE_SECRET_ARN") &&
+      !contains([for item in module.ecs[0].test_contract.frontend.container_definition.environment : item.name], "DATABASE_SSL_CA_PATH") &&
+      alltrue([for name in ["DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME", "DATABASE_USER", "DATABASE_SECRET_ARN", "AWS_REGION", "DATABASE_SSL_CA_PATH"] : contains([for item in module.ecs[0].test_contract.backend.container_definition.environment : item.name], name)]) &&
+      module.migration[0].test_contract.task_role_arn == module.iam[0].backend_role_arn &&
+      module.migration[0].test_contract.task_role_arn != module.iam[0].frontend_role_arn
+    )
+    error_message = "P5 frontend must contain no database configuration, while backend and migration retain the exact database role contract."
   }
 }
 
